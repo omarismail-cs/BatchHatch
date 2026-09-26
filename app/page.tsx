@@ -306,8 +306,8 @@ export default function Home() {
                     >
                       <span style={{
                         fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "2px 7px", flexShrink: 0,
-                        background: a.region === "Dunmoor" ? "#EDE9FE" : "#EFF6FF",
-                        color:      a.region === "Dunmoor" ? "#6D28D9" : "#1D4ED8",
+                        background: "var(--bg)", border: "1px solid var(--border-md)",
+                        color: "var(--muted)", fontFamily: "var(--font-mono)",
                       }}>{a.id}</span>
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block" }}>{a.name}</span>
