@@ -357,25 +357,22 @@ export default function Home() {
                   padding: "16px 20px", border: "1px solid var(--red-mid)",
                 }}>
                   <div>
-                    <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Power company guessed</div>
-                    <div style={{ fontSize: 13, color: "var(--muted)", textDecoration: "line-through" }}>
-                      {account.estimatedRead.toLocaleString()} kWh
-                    </div>
-                    <div style={{ fontSize: 28, fontWeight: 900, color: "var(--red)", lineHeight: 1, marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Disputed bill amount</div>
+                    <div style={{ fontSize: 28, fontWeight: 900, color: "var(--red)", lineHeight: 1 }}>
                       ${account.estimatedBill.toFixed(2)}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
+                      SYS-06 guessed {account.estimatedRead.toLocaleString()} kWh
                     </div>
                   </div>
                   <div style={{ fontSize: 20, color: "var(--red-mid)" }}>→</div>
                   <div>
-                    <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Why it&apos;s wrong</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", lineHeight: 1.2 }}>
-                      Meter unread since
-                    </div>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: "var(--red)", lineHeight: 1.1, marginTop: 2 }}>
+                    <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Meter last read</div>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: "var(--red)", lineHeight: 1.1 }}>
                       {new Date(account.previousReadDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
-                      SYS-06 estimated {(account.estimatedRead - account.previousRead).toLocaleString()} kWh
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
+                      {Math.round((new Date().getTime() - new Date(account.previousReadDate).getTime()) / (1000 * 60 * 60 * 24 * 30))} months without a real read
                     </div>
                   </div>
                 </div>
