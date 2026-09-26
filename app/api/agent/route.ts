@@ -169,10 +169,16 @@ export async function POST(req: NextRequest) {
   }
 
   const payload = await req.json().catch(() => ({}));
-  const message  = String(payload.message  || "Triage all cases by urgency.");
+  const message   = String(payload.message   || "Triage all cases by urgency.");
   const accountId = String(payload.accountId || "DUN-9021").toUpperCase();
   const dialRead  = Number(payload.dialRead  || 0);
+  const mode      = payload.mode === "action" ? "action" : "advisory";
   const account   = ACCOUNTS[accountId] ?? ACCOUNTS["DUN-9021"];
+
+  // Advisory mode: only allow list_backlog — no bill correction tools
+  const activeTools = mode === "action"
+    ? TOOLS
+    : TOOLS.filter((t) => t.function.name === "list_backlog");
 
   const accountContext = `
 Current account on screen:
@@ -212,7 +218,7 @@ Current account on screen:
     const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gemini-3.8-flash", temperature: 0.3, messages, tools: TOOLS }),
+      body: JSON.stringify({ model: "gemini-3.8-flash", temperature: 0.3, messages, tools: activeTools }),
     });
     if (!res.ok) {
       const err = await res.text();
