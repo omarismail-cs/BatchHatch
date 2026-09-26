@@ -367,12 +367,15 @@ export default function Home() {
                   </div>
                   <div style={{ fontSize: 20, color: "var(--red-mid)" }}>→</div>
                   <div>
-                    <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Customer says dial reads</div>
-                    <div style={{ fontSize: 28, fontWeight: 900, color: "var(--text)", lineHeight: 1 }}>
-                      {account.suggestedRead.toLocaleString()}
+                    <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Why it&apos;s wrong</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", lineHeight: 1.2 }}>
+                      Meter unread since
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                      {(account.estimatedRead - account.suggestedRead).toLocaleString()} kWh less than guessed
+                    <div style={{ fontSize: 22, fontWeight: 900, color: "var(--red)", lineHeight: 1.1, marginTop: 2 }}>
+                      {new Date(account.previousReadDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+                      SYS-06 estimated {(account.estimatedRead - account.previousRead).toLocaleString()} kWh
                     </div>
                   </div>
                 </div>
