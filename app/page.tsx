@@ -369,10 +369,10 @@ export default function Home() {
                   <div>
                     <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Meter last read</div>
                     <div style={{ fontSize: 22, fontWeight: 900, color: "var(--red)", lineHeight: 1.1 }}>
-                      {new Date(account.previousReadDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                      {(() => { const [y,m,d] = account.previousReadDate.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); })()}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
-                      {Math.round((new Date().getTime() - new Date(account.previousReadDate).getTime()) / (1000 * 60 * 60 * 24 * 30))} months without a real read
+                      {(() => { const [y,m,d] = account.previousReadDate.split("-").map(Number); return Math.round((Date.now() - new Date(y,m-1,d).getTime()) / (1000*60*60*24*30)); })()} months without a real read
                     </div>
                   </div>
                 </div>
