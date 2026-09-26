@@ -25,7 +25,7 @@ export default function Home() {
   const [sessionCorrected, setSessionCorrected] = useState(0);
   const [sessionDays, setSessionDays] = useState(0);
   const [agentOpen, setAgentOpen] = useState(false);
-  const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Be specific — name who needs attention first and why.");
+  const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences.");
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentReply, setAgentReply] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -96,7 +96,7 @@ export default function Home() {
     setSessionDays((p) => p + account.openDays);
   }
 
-  async function handleAgentRun() {
+  async function handleAgentRun(mode: "advisory" | "action" = "advisory") {
     if (!account || agentRunning) return;
     setAgentRunning(true);
     setAgentReply("");
@@ -108,15 +108,18 @@ export default function Home() {
           message: agentQuery,
           accountId: account.id,
           dialRead: parseInt(dialRead, 10) || account.suggestedRead,
+          mode,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Agent failed");
       setAgentReply(data.reply || "");
-      for (const action of (data.actions || []) as { type: string; accountId?: string; read?: number }[]) {
-        if (action.type === "rate" && action.read) {
-          setDialRead(String(action.read));
-          await handleFixWithRead(action.read);
+      if (mode === "action") {
+        for (const action of (data.actions || []) as { type: string; accountId?: string; read?: number }[]) {
+          if (action.type === "rate" && action.read) {
+            setDialRead(String(action.read));
+            await handleFixWithRead(action.read);
+          }
         }
       }
     } catch (err) {
@@ -592,23 +595,25 @@ export default function Home() {
 
                 {agentOpen && (
                   <div style={{ padding: "12px 16px 16px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
-                    {/* Preset chips */}
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+
+                    {/* Advisory chips — text output only */}
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--dim)", letterSpacing: "0.05em", marginBottom: 6 }}>ASK</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
                       {[
-                        { label: "Triage queue",         query: "Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Be specific — name who needs attention first and why." },
-                        { label: "What should I say?",   query: "I'm on a live call with this customer right now. Give me 3–4 specific talking points based on their situation: how long they've waited, what went wrong with the estimate, and how we're fixing it. Be conversational, not scripted." },
-                        { label: "Should I escalate?",   query: "Based on this account's open days, callback count, status, and agent notes — should I escalate this case, offer goodwill credit, or just correct and close? Give a clear recommendation with one sentence of reasoning." },
-                        { label: "Draft customer SMS",   query: "Write a plain-English SMS (under 160 characters) to this customer confirming their corrected bill amount and what happens next. No jargon." },
+                        { label: "Triage queue",       query: "Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences." },
+                        { label: "Why overbilled?",    query: "Explain in plain English why this customer was overbilled. What did the SYS-06 algorithm get wrong for their specific account?" },
+                        { label: "Escalate or close?", query: "Should I escalate this case, offer goodwill credit, or just correct and close? One clear recommendation with a single sentence of reasoning." },
+                        { label: "Call prep",          query: "Give me 3 specific talking points for my live call with this customer. Base it on their wait time, what went wrong, and how I'm fixing it. Conversational, not scripted." },
                       ].map((chip) => (
                         <button
                           key={chip.label}
-                          onClick={() => { setAgentQuery(chip.query); }}
+                          onClick={() => setAgentQuery(chip.query)}
                           style={{
                             padding: "5px 11px", fontSize: 11, fontWeight: 600,
-                            background: agentQuery === chip.query ? "var(--blue)" : "var(--bg)",
-                            color: agentQuery === chip.query ? "#fff" : "var(--muted)",
-                            border: `1px solid ${agentQuery === chip.query ? "var(--blue)" : "var(--border-md)"}`,
-                            borderRadius: 20, cursor: "pointer", transition: "all 0.15s",
+                            background: agentQuery === chip.query ? "var(--blue-light)" : "var(--bg)",
+                            color: agentQuery === chip.query ? "var(--blue)" : "var(--muted)",
+                            border: `1px solid ${agentQuery === chip.query ? "var(--blue-mid)" : "var(--border-md)"}`,
+                            borderRadius: 20, cursor: "pointer",
                           }}
                         >
                           {chip.label}
@@ -616,7 +621,7 @@ export default function Home() {
                       ))}
                     </div>
 
-                    {/* Query input */}
+                    {/* Custom query */}
                     <textarea
                       value={agentQuery}
                       onChange={(e) => setAgentQuery(e.target.value)}
@@ -626,32 +631,50 @@ export default function Home() {
                         background: "var(--bg)", border: "1px solid var(--border-md)", borderRadius: 8,
                         resize: "none", boxSizing: "border-box", lineHeight: 1.5,
                       }}
-                      placeholder="Or type a custom request…"
+                      placeholder="Or type a custom question…"
                     />
 
+                    {/* Buttons: Ask (advisory) and Do it for me (action) */}
                     <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
                       <button
-                        onClick={handleAgentRun}
+                        onClick={() => handleAgentRun("advisory")}
                         disabled={agentRunning}
                         style={{
                           padding: "7px 16px", fontSize: 12, fontWeight: 700,
-                          background: agentRunning ? "var(--dim)" : "var(--blue)",
+                          background: agentRunning ? "var(--hint)" : "var(--blue)",
                           color: "#fff", border: "none", borderRadius: 8,
                           cursor: agentRunning ? "default" : "pointer",
                         }}
                       >
                         {agentRunning
                           ? <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>⟳</span> Running…</>
-                          : "Run"}
+                          : "Ask"}
+                      </button>
+                      <div style={{ width: 1, height: 20, background: "var(--border)", flexShrink: 0 }} />
+                      <button
+                        onClick={() => {
+                          setAgentQuery("Rate the bill using the suggested dial read, then close the case.");
+                          handleAgentRun("action");
+                        }}
+                        disabled={agentRunning}
+                        style={{
+                          padding: "7px 14px", fontSize: 12, fontWeight: 600,
+                          background: "none", color: "var(--muted)",
+                          border: "1px solid var(--border-md)", borderRadius: 8,
+                          cursor: agentRunning ? "default" : "pointer",
+                        }}
+                      >
+                        Do it for me →
                       </button>
                     </div>
 
+                    {/* Reply output */}
                     {agentReply && (
                       <div style={{
-                        marginTop: 10, padding: "12px 14px", background: "var(--blue-light)",
-                        border: "1px solid var(--blue-mid)", borderRadius: 10,
-                        fontSize: 12, color: "var(--muted)", lineHeight: 1.7,
-                        whiteSpace: "pre-wrap",
+                        marginTop: 12, padding: "12px 14px",
+                        background: "var(--blue-light)", border: "1px solid var(--blue-mid)",
+                        borderRadius: 10, fontSize: 12, color: "var(--muted)",
+                        lineHeight: 1.75, whiteSpace: "pre-wrap",
                       }}>
                         {agentReply}
                       </div>
