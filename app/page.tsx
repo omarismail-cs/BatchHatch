@@ -571,36 +571,36 @@ export default function Home() {
               </div>
 
               {/* ── AI Agent panel ─────────────────────────── */}
-              <div className="card" style={{ padding: 0, overflow: "hidden", border: "1px solid #2A1F5A" }}>
+              <div className="card" style={{ padding: 0, overflow: "hidden", borderColor: "var(--blue-mid)" }}>
                 <button
                   onClick={() => setAgentOpen((v) => !v)}
                   style={{
                     width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "12px 16px", background: "#0D0A1A", border: "none", cursor: "pointer",
+                    padding: "12px 16px", background: "var(--blue-light)", border: "none", cursor: "pointer",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div style={{
-                      width: 20, height: 20, borderRadius: 6, background: "#6366F1",
+                      width: 20, height: 20, borderRadius: 6, background: "var(--blue)",
                       display: "flex", alignItems: "center", justifyContent: "center",
                       fontSize: 10, color: "#fff", fontWeight: 900, flexShrink: 0,
                     }}>✦</div>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#A5B4FC" }}>Agent auto-fix</span>
-                    <span style={{ fontSize: 11, color: "#4B5563" }}>— let the AI handle it</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)" }}>Agent auto-fix</span>
+                    <span style={{ fontSize: 11, color: "var(--dim)" }}>— let the AI handle it</span>
                   </div>
-                  <span style={{ fontSize: 11, color: "#4B5563" }}>{agentOpen ? "▲" : "▼"}</span>
+                  <span style={{ fontSize: 11, color: "var(--dim)" }}>{agentOpen ? "▲" : "▼"}</span>
                 </button>
 
                 {agentOpen && (
-                  <div style={{ padding: "12px 16px 16px", background: "#0A0814", borderTop: "1px solid #1E1640" }}>
+                  <div style={{ padding: "12px 16px 16px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
                     <textarea
                       value={agentQuery}
                       onChange={(e) => setAgentQuery(e.target.value)}
                       rows={2}
                       style={{
-                        width: "100%", padding: "8px 10px", fontSize: 12, color: "#C4B5FD",
-                        background: "#120E24", border: "1px solid #2A1F5A", borderRadius: 8,
-                        resize: "none", fontFamily: "var(--font-mono)", boxSizing: "border-box",
+                        width: "100%", padding: "8px 10px", fontSize: 12, color: "var(--text)",
+                        background: "var(--bg)", border: "1px solid var(--border-md)", borderRadius: 8,
+                        resize: "none", boxSizing: "border-box", lineHeight: 1.5,
                       }}
                       placeholder="Ask the agent..."
                     />
@@ -610,21 +610,21 @@ export default function Home() {
                         disabled={agentRunning}
                         style={{
                           padding: "7px 16px", fontSize: 12, fontWeight: 700,
-                          background: agentRunning ? "#1E1640" : "#6366F1",
+                          background: agentRunning ? "var(--dim)" : "var(--blue)",
                           color: "#fff", border: "none", borderRadius: 8, cursor: agentRunning ? "default" : "pointer",
                         }}
                       >
                         {agentRunning ? "Running…" : "Run"}
                       </button>
-                      <span style={{ fontSize: 11, color: "#4B5563" }}>
-                        Needs <code style={{ fontSize: 10 }}>OPENAI_API_KEY</code> in .env.local
+                      <span style={{ fontSize: 11, color: "var(--dim)" }}>
+                        Needs <code style={{ fontSize: 10, fontFamily: "var(--font-mono)" }}>OPENAI_API_KEY</code> in .env.local
                       </span>
                     </div>
                     {agentReply && (
                       <div style={{
-                        marginTop: 10, padding: "10px 12px", background: "#0D1020",
-                        border: "1px solid #1E2A50", borderRadius: 8,
-                        fontSize: 12, color: "#94A3B8", lineHeight: 1.6,
+                        marginTop: 10, padding: "10px 12px", background: "var(--blue-light)",
+                        border: "1px solid var(--blue-mid)", borderRadius: 8,
+                        fontSize: 12, color: "var(--muted)", lineHeight: 1.6,
                       }}>
                         {agentReply}
                       </div>
