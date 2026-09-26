@@ -617,7 +617,7 @@ export default function Home() {
                         {agentRunning ? "Running…" : "Run"}
                       </button>
                       <span style={{ fontSize: 11, color: "var(--dim)" }}>
-                        Needs <code style={{ fontSize: 10, fontFamily: "var(--font-mono)" }}>OPENAI_API_KEY</code> in .env.local
+                        Needs <code style={{ fontSize: 10, fontFamily: "var(--font-mono)" }}>GEMINI_API_KEY</code> in .env.local
                       </span>
                     </div>
                     {agentReply && (

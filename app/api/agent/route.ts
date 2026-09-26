@@ -146,9 +146,9 @@ function actionFor(name: string, args: Record<string, unknown>, result: Record<s
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const key = process.env.OPENAI_API_KEY;
+  const key = process.env.GEMINI_API_KEY;
   if (!key) {
-    return NextResponse.json({ error: "OPENAI_API_KEY not set in .env.local" }, { status: 500 });
+    return NextResponse.json({ error: "GEMINI_API_KEY not set in .env.local" }, { status: 500 });
   }
 
   const payload = await req.json().catch(() => ({}));
@@ -176,10 +176,10 @@ export async function POST(req: NextRequest) {
   let reply = "I could not finish that.";
 
   for (let i = 0; i < 4; i++) {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gpt-4o-mini", temperature: 0.2, messages, tools: TOOLS }),
+      body: JSON.stringify({ model: "gemini-2.0-flash", temperature: 0.2, messages, tools: TOOLS }),
     });
     if (!res.ok) {
       const err = await res.text();
@@ -207,6 +207,6 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const hasKey = !!process.env.OPENAI_API_KEY;
+  const hasKey = !!process.env.GEMINI_API_KEY;
   return NextResponse.json({ key: hasKey });
 }
