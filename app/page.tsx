@@ -96,7 +96,7 @@ export default function Home() {
     setSessionDays((p) => p + account.openDays);
   }
 
-  async function handleAgentRun(mode: "advisory" | "action" = "advisory") {
+  async function handleAgentRun(mode: "advisory" | "action" = "advisory", overrideMessage?: string) {
     if (!account || agentRunning) return;
     setAgentRunning(true);
     setAgentReply("");
@@ -105,7 +105,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: agentQuery,
+          message: overrideMessage ?? agentQuery,
           accountId: account.id,
           dialRead: parseInt(dialRead, 10) || account.suggestedRead,
           mode,
@@ -653,10 +653,7 @@ export default function Home() {
                       </button>
                       <div style={{ width: 1, height: 20, background: "var(--border)", flexShrink: 0 }} />
                       <button
-                        onClick={() => {
-                          setAgentQuery("Rate the bill using the suggested dial read, then close the case.");
-                          handleAgentRun("action");
-                        }}
+                        onClick={() => handleAgentRun("action", "Rate the bill using the suggested dial read, then close the case.")}
                         disabled={agentRunning}
                         style={{
                           padding: "7px 14px", fontSize: 12, fontWeight: 600,
@@ -669,7 +666,7 @@ export default function Home() {
                       </button>
                     </div>
 
-                    {/* Reply output */}
+                    {/* Reply output — strip markdown markers */}
                     {agentReply && (
                       <div style={{
                         marginTop: 12, padding: "12px 14px",
@@ -677,7 +674,7 @@ export default function Home() {
                         borderRadius: 10, fontSize: 12, color: "var(--muted)",
                         lineHeight: 1.75, whiteSpace: "pre-wrap",
                       }}>
-                        {agentReply}
+                        {agentReply.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1")}
                       </div>
                     )}
                   </div>
