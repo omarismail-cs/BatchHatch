@@ -1,36 +1,92 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BatchHatch
 
-## Getting Started
+**CGI Challenge — Northwind Utilities · Barrowdale & Dunmoor billing correction**
 
-First, run the development server:
+> Fix overbilled accounts while the customer is still on the phone.  
+> Aurora's 1998 COBOL rating engine, running in the browser in 15ms.
+
+![BatchHatch logo](public/logo.png)
+
+---
+
+## The problem
+
+Northwind has 519,000 accounts across Barrowdale and Dunmoor with zero smart-meter penetration. Aurora SYS-06 (2012) fills the gap with seasonal estimates calibrated on 2010–2012 national averages — never updated since. At 62% estimated-read rate, it generates **13,147 billing exceptions per month**.
+
+The complaints, callbacks, and escalations all follow from that number. The average resolution time is now **38.2 days**, down from 9.1 days two years ago. The AI chatbot Northwind deployed in Jan 2025 made it worse — 82.6% of sessions escalate to a human agent anyway.
+
+BatchHatch doesn't triage complaints. It fixes the bill during the call.
+
+---
+
+## How it works
+
+1. Agent pulls up the customer's account
+2. Customer reads the number off their physical dial meter
+3. BatchHatch runs it through the same COBOL rating logic as the overnight mainframe job
+4. Corrected bill is issued in 15ms — no waiting for the 2am batch
+5. An 80-column SYS-01 batch record is generated, ready for ingest
+
+The engine validates the reading against the previous read, checks plausibility against the account's typical quarterly usage, and rejects anything that would produce an impossible result before it touches the batch file.
+
+---
+
+## Value case (Year 1, conservative)
+
+| | |
+|---|---|
+| Callback elimination | $316k |
+| Manual correction elimination | $300k |
+| Complaint deflection | $245k |
+| **Total Year 1 savings** | **$861k** |
+| Implementation cost | $65k |
+| **Payback** | **4 weeks** |
+
+Full model at `/metrics` in the running app, sourced from Northwind's own CSV data.
+
+---
+
+## Stack
+
+- **Next.js 16** (App Router, Turbopack)
+- **TypeScript**
+- **Tailwind v4** (CSS-based config)
+- **Satoshi** (UI font via Fontshare) + **Geist Mono** (code/terminal)
+- COBOL engine simulated in TypeScript — faithful translation of Aurora SYS-01 `RATING.COB` v4.2.1 (1998) logic, compiled to match mainframe output format exactly
+
+---
+
+## Running locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+For the demo, load **Margaret Holloway (DUN-9021)** and enter dial read **61,400**.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Data
 
-To learn more about Next.js, take a look at the following resources:
+All data from the official Northwind challenge package:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `northwind_unit_costs.csv`
+- `northwind_systems.csv`
+- `northwind_monthly_kpis.csv`
+- `northwind_meter_reads.csv`
+- `northwind_ai_pilot_2025.csv`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## Team
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Name | |
+|---|---|
+| Omar Ismail | |
+| Moaz Sholook | |
+| Iman Ullah | |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+CGI Challenge · Sep 2026

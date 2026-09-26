@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#111111"/>
+  <!-- 3 horizontal lines (batch records / punch card) -->
+  <rect x="5" y="21" width="13" height="2.5" rx="1.2" fill="white"/>
+  <rect x="5" y="16" width="13" height="2.5" rx="1.2" fill="white"/>
+  <!-- Diagonal top line angling up-right -->
+  <line x1="5" y1="13" x2="17" y2="7" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Orange status dot -->
+  <rect x="20" y="17" width="5" height="5" rx="1" fill="#F59E0B"/>
+</svg>
