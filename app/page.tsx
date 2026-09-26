@@ -25,7 +25,7 @@ export default function Home() {
   const [sessionCorrected, setSessionCorrected] = useState(0);
   const [sessionDays, setSessionDays] = useState(0);
   const [agentOpen, setAgentOpen] = useState(false);
-  const [agentQuery, setAgentQuery] = useState("Correct the open case from the dial read and close it.");
+  const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Be specific — name who needs attention first and why.");
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentReply, setAgentReply] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -593,6 +593,31 @@ export default function Home() {
 
                 {agentOpen && (
                   <div style={{ padding: "12px 16px 16px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
+                    {/* Preset chips */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                      {[
+                        { label: "Triage queue",         query: "Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Be specific — name who needs attention first and why." },
+                        { label: "What should I say?",   query: "I'm on a live call with this customer right now. Give me 3–4 specific talking points based on their situation: how long they've waited, what went wrong with the estimate, and how we're fixing it. Be conversational, not scripted." },
+                        { label: "Should I escalate?",   query: "Based on this account's open days, callback count, status, and agent notes — should I escalate this case, offer goodwill credit, or just correct and close? Give a clear recommendation with one sentence of reasoning." },
+                        { label: "Draft customer SMS",   query: "Write a plain-English SMS (under 160 characters) to this customer confirming their corrected bill amount and what happens next. No jargon." },
+                      ].map((chip) => (
+                        <button
+                          key={chip.label}
+                          onClick={() => { setAgentQuery(chip.query); }}
+                          style={{
+                            padding: "5px 11px", fontSize: 11, fontWeight: 600,
+                            background: agentQuery === chip.query ? "var(--blue)" : "var(--bg)",
+                            color: agentQuery === chip.query ? "#fff" : "var(--muted)",
+                            border: `1px solid ${agentQuery === chip.query ? "var(--blue)" : "var(--border-md)"}`,
+                            borderRadius: 20, cursor: "pointer", transition: "all 0.15s",
+                          }}
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Query input */}
                     <textarea
                       value={agentQuery}
                       onChange={(e) => setAgentQuery(e.target.value)}
@@ -602,8 +627,9 @@ export default function Home() {
                         background: "var(--bg)", border: "1px solid var(--border-md)", borderRadius: 8,
                         resize: "none", boxSizing: "border-box", lineHeight: 1.5,
                       }}
-                      placeholder="Ask the agent..."
+                      placeholder="Or type a custom request…"
                     />
+
                     <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
                       <button
                         onClick={handleAgentRun}
@@ -611,20 +637,25 @@ export default function Home() {
                         style={{
                           padding: "7px 16px", fontSize: 12, fontWeight: 700,
                           background: agentRunning ? "var(--dim)" : "var(--blue)",
-                          color: "#fff", border: "none", borderRadius: 8, cursor: agentRunning ? "default" : "pointer",
+                          color: "#fff", border: "none", borderRadius: 8,
+                          cursor: agentRunning ? "default" : "pointer",
                         }}
                       >
-                        {agentRunning ? "Running…" : "Run"}
+                        {agentRunning
+                          ? <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>⟳</span> Running…</>
+                          : "Run"}
                       </button>
                       <span style={{ fontSize: 11, color: "var(--dim)" }}>
                         Needs <code style={{ fontSize: 10, fontFamily: "var(--font-mono)" }}>GEMINI_API_KEY</code> in .env.local
                       </span>
                     </div>
+
                     {agentReply && (
                       <div style={{
-                        marginTop: 10, padding: "10px 12px", background: "var(--blue-light)",
-                        border: "1px solid var(--blue-mid)", borderRadius: 8,
-                        fontSize: 12, color: "var(--muted)", lineHeight: 1.6,
+                        marginTop: 10, padding: "12px 14px", background: "var(--blue-light)",
+                        border: "1px solid var(--blue-mid)", borderRadius: 10,
+                        fontSize: 12, color: "var(--muted)", lineHeight: 1.7,
+                        whiteSpace: "pre-wrap",
                       }}>
                         {agentReply}
                       </div>

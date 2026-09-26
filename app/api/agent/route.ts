@@ -1,16 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// ── Billing data (mirrors lib/accounts.ts + lib/billing.ts) ──────────────────
+// ── Billing data ──────────────────────────────────────────────────────────────
 
 const ACCOUNTS: Record<string, {
-  name: string; previous: number; estimate: number; bill: number;
-  tariff: string; suggested: number; region: string;
+  name: string; address: string; region: string;
+  previous: number; estimate: number; bill: number;
+  tariff: string; suggested: number;
+  openDays: number; callbackCount: number; status: string; agentNotes: string;
 }> = {
-  "DUN-9021": { name: "Margaret Holloway", previous: 60150, estimate: 94210, bill: 842.10, tariff: "NW-DOM-T2-WIN", suggested: 61400, region: "Dunmoor" },
-  "BAR-4401": { name: "James Whitmore",    previous: 28490, estimate: 51230, bill: 612.40, tariff: "NW-DOM-T1-STD", suggested: 31750, region: "Barrowdale" },
-  "DUN-7782": { name: "Patricia Okafor",   previous: 142300, estimate: 178440, bill: 524.80, tariff: "NW-DOM-T2-WIN", suggested: 143950, region: "Dunmoor" },
-  "BAR-2209": { name: "Robert Finch",      previous: 73200, estimate: 89750, bill: 388.60, tariff: "NW-DOM-T1-STD", suggested: 75300, region: "Barrowdale" },
-  "DUN-3345": { name: "Edith Cargill",     previous: 31800, estimate: 58920, bill: 723.50, tariff: "NW-DOM-T2-WIN", suggested: 33200, region: "Dunmoor" },
+  "DUN-9021": {
+    name: "Margaret Holloway", address: "14 Trent Close, Dunmoor, DU4 7RN", region: "Dunmoor",
+    previous: 60150, estimate: 94210, bill: 842.10, tariff: "NW-DOM-T2-WIN", suggested: 61400,
+    openDays: 41, callbackCount: 3, status: "PENDING_OVERNIGHT_BATCH",
+    agentNotes: "Fixed pension customer. Escalated to manager twice. Threatening regulator complaint.",
+  },
+  "BAR-4401": {
+    name: "James Whitmore", address: "7 Birch Avenue, Barrowdale, BA2 5PQ", region: "Barrowdale",
+    previous: 28490, estimate: 51230, bill: 612.40, tariff: "NW-DOM-T1-STD", suggested: 31750,
+    openDays: 28, callbackCount: 2, status: "PENDING_OVERNIGHT_BATCH",
+    agentNotes: "Retired teacher. Has submitted formal written complaint.",
+  },
+  "DUN-7782": {
+    name: "Patricia Okafor", address: "31 Millfield Road, Dunmoor, DU3 2LK", region: "Dunmoor",
+    previous: 142300, estimate: 178440, bill: 524.80, tariff: "NW-DOM-T2-WIN", suggested: 143950,
+    openDays: 19, callbackCount: 1, status: "PENDING_OVERNIGHT_BATCH",
+    agentNotes: "Works from home. Has photographic evidence of meter reading.",
+  },
+  "BAR-2209": {
+    name: "Robert Finch", address: "88 Sycamore Drive, Barrowdale, BA7 1TH", region: "Barrowdale",
+    previous: 73200, estimate: 89750, bill: 388.60, tariff: "NW-DOM-T1-STD", suggested: 75300,
+    openDays: 12, callbackCount: 0, status: "PENDING_OVERNIGHT_BATCH",
+    agentNotes: "New customer referral. Meter last read 14 months ago.",
+  },
+  "DUN-3345": {
+    name: "Edith Cargill", address: "5 Heather Lane, Dunmoor, DU1 9WE", region: "Dunmoor",
+    previous: 31800, estimate: 58920, bill: 723.50, tariff: "NW-DOM-T2-WIN", suggested: 33200,
+    openDays: 58, callbackCount: 4, status: "ESCALATED",
+    agentNotes: "URGENT: Solicitor involved. Customer on energy debt support scheme.",
+  },
 };
 
 const OVERRIDES: Record<string, Record<number, number>> = {
@@ -52,25 +79,20 @@ function rateBill(accountId: string, currentRead: number) {
   }
 
   return {
-    ok: true,
-    accountId,
-    name: account.name,
-    read: currentRead,
-    units,
-    estimatedBill: account.bill,
-    correctedBill: total,
+    ok: true, accountId, name: account.name, read: currentRead, units,
+    estimatedBill: account.bill, correctedBill: total,
     saved: Math.round((account.bill - total) * 100) / 100,
   };
 }
 
-// ── OpenAI tool definitions ───────────────────────────────────────────────────
+// ── Tools ─────────────────────────────────────────────────────────────────────
 
 const TOOLS = [
   {
     type: "function",
     function: {
       name: "list_backlog",
-      description: "List the five open estimated-bill cases.",
+      description: "List all five open billing exception cases with full details including urgency signals.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
@@ -78,12 +100,12 @@ const TOOLS = [
     type: "function",
     function: {
       name: "rate_bill",
-      description: "Run BatchHatch Aurora rating for one account and a dial read.",
+      description: "Run the Aurora SYS-01 billing engine for one account and a dial read. Returns corrected bill amount.",
       parameters: {
         type: "object",
         properties: {
-          account_id: { type: "string" },
-          current_read: { type: "integer" },
+          account_id: { type: "string", description: "Account ID e.g. DUN-9021" },
+          current_read: { type: "integer", description: "Meter dial reading" },
         },
         required: ["account_id", "current_read"],
         additionalProperties: false,
@@ -94,7 +116,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "hold_bill",
-      description: "Hold the estimated bill so it is not sent to the customer.",
+      description: "Hold the estimated bill so it is not dispatched to the customer tonight.",
       parameters: {
         type: "object",
         properties: { account_id: { type: "string" } },
@@ -107,7 +129,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "close_case",
-      description: "Close the case on this screen without transferring it.",
+      description: "Close the case on this screen without transferring it to another team.",
       parameters: {
         type: "object",
         properties: { account_id: { type: "string" } },
@@ -132,12 +154,7 @@ function toolResult(name: string, args: Record<string, unknown>) {
 
 function actionFor(name: string, args: Record<string, unknown>, result: Record<string, unknown>) {
   const accountId = String(args.account_id ?? "").toUpperCase();
-  if (name === "rate_bill" && result.ok) {
-    return [
-      { type: "select", accountId },
-      { type: "rate", accountId, read: result.read },
-    ];
-  }
+  if (name === "rate_bill" && result.ok) return [{ type: "select", accountId }, { type: "rate", accountId, read: result.read }];
   if (name === "hold_bill" && result.ok) return [{ type: "select", accountId }, { type: "hold", accountId }];
   if (name === "close_case" && result.ok) return [{ type: "select", accountId }, { type: "close", accountId }];
   return [];
@@ -152,38 +169,54 @@ export async function POST(req: NextRequest) {
   }
 
   const payload = await req.json().catch(() => ({}));
-  const message = String(payload.message || "Correct the open case from the dial read and close it.");
+  const message  = String(payload.message  || "Triage all cases by urgency.");
   const accountId = String(payload.accountId || "DUN-9021").toUpperCase();
-  const dialRead = Number(payload.dialRead || 0);
-  const account = ACCOUNTS[accountId] ?? ACCOUNTS["DUN-9021"];
+  const dialRead  = Number(payload.dialRead  || 0);
+  const account   = ACCOUNTS[accountId] ?? ACCOUNTS["DUN-9021"];
+
+  const accountContext = `
+Current account on screen:
+- ID: ${accountId} | Customer: ${account.name} | Region: ${account.region}
+- Address: ${account.address}
+- Case open: ${account.openDays} days | Callbacks: ${account.callbackCount} | Status: ${account.status}
+- Agent notes: ${account.agentNotes}
+- Estimated bill: $${account.bill} (read ${account.estimate}, was ${account.previous})
+- Suggested corrected read: ${account.suggested || dialRead}
+- Tariff: ${account.tariff}
+`.trim();
 
   const messages: object[] = [
     {
       role: "system",
-      content:
-        "You act for a Northwind call-centre agent. Use the tools. " +
-        "Be brief. Currency is CAD. BatchHatch rates the dial read with Aurora's tariff. " +
-        "If the user does not give a read, use the account suggested read. " +
-        "After a correction, say the old bill, the new bill, and that the case can close without a transfer.",
+      content: [
+        "You are an AI assistant helping a Northwind Energy call-centre agent.",
+        "BatchHatch rates meter readings using the Aurora SYS-01 COBOL billing engine.",
+        "You have four tools: list_backlog, rate_bill, hold_bill, close_case.",
+        "Currency is CAD. Be concise and direct — the agent is on a live call.",
+        "For triage: call list_backlog, then rank by urgency using open days, callbacks, status, and agent notes.",
+        "For escalation advice: use the account context, don't just repeat the status field — give a clear recommendation.",
+        "For talking points: be specific to this customer's situation. Don't give generic scripts.",
+        "For customer messages: write in plain English, no jargon, under 160 characters for SMS.",
+      ].join(" "),
     },
     {
       role: "user",
-      content: `Open account ${accountId}. Suggested dial read ${dialRead || account.suggested}. Estimated bill $${account.bill}. Request: ${message}`,
+      content: `${accountContext}\n\nRequest: ${message}`,
     },
   ];
 
   const actions: object[] = [];
-  let reply = "I could not finish that.";
+  let reply = "I could not complete that request.";
 
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
     const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gemini-2.0-flash", temperature: 0.2, messages, tools: TOOLS }),
+      body: JSON.stringify({ model: "gemini-3.8-flash", temperature: 0.3, messages, tools: TOOLS }),
     });
     if (!res.ok) {
       const err = await res.text();
-      return NextResponse.json({ error: `OpenAI ${res.status}: ${err.slice(0, 200)}` }, { status: 502 });
+      return NextResponse.json({ error: `Gemini ${res.status}: ${err.slice(0, 300)}` }, { status: 502 });
     }
     const data = await res.json();
     const choice = data.choices[0].message;
@@ -207,6 +240,5 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const hasKey = !!process.env.GEMINI_API_KEY;
-  return NextResponse.json({ key: hasKey });
+  return NextResponse.json({ key: !!process.env.GEMINI_API_KEY });
 }
