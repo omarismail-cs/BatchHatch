@@ -1,26 +1,104 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg:          #F4F6FA;
+  --surface:     #FFFFFF;
+  --border:      #E4E8F0;
+  --border-md:   #CDD3E0;
+  --text:        #0D1117;
+  --muted:       #4A5568;
+  --dim:         #8896A8;
+  --hint:        #C8D0DC;
+
+  --blue:        #2462E8;
+  --blue-dark:   #1A4EC4;
+  --blue-light:  #EEF3FD;
+  --blue-mid:    #93C5FD;
+
+  --red:         #E02424;
+  --red-light:   #FEF1F1;
+  --red-mid:     #FBBEBE;
+
+  --green:       #0E9B52;
+  --green-dark:  #0A7A40;
+  --green-light: #EDFBF3;
+  --green-mid:   #A7EFC5;
+
+  --amber:       #D97706;
+  --amber-light: #FFFBEB;
+  --amber-mid:   #FDE68A;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Inputs and buttons inherit Satoshi — browsers don't do this by default */
+input, button, select, textarea { font-family: inherit; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  /* Satoshi for all UI chrome; mono only for code/data */
+  font-family: "Satoshi", ui-sans-serif, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* Monospace — COBOL output, batch strings, tabular numbers */
+.mono {
+  font-family: var(--font-mono), "GeistMono", "Geist Mono", ui-monospace,
+    "Cascadia Code", "Fira Mono", "Courier New", monospace;
+}
+
+/* Number inputs without spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+input[type="number"] { -moz-appearance: textfield; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--hint); border-radius: 2px; }
+
+/* Card utility */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 1px 4px rgba(13,17,23,0.06), 0 1px 2px rgba(13,17,23,0.04);
+}
+
+/* COBOL terminal screen — stays mono, the one deliberately dark moment */
+.cobol-screen {
+  background: #030906;
+  color: #00EE38;
+  font-family: var(--font-mono), "GeistMono", "Geist Mono", ui-monospace,
+    "Cascadia Code", "Fira Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  letter-spacing: 0.01em;
+}
+.cobol-dim  { color: #1a3a1a; }
+.cobol-head { color: #00bb2d; }
+
+/* Fade-in for result elements */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 0.35s ease both; }
+
+/* Number ticker */
+@keyframes numTick {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.num-tick { animation: numTick 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+/* Terminal cursor blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
