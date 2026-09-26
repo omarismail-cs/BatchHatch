@@ -282,7 +282,7 @@ export default function Home() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {[
-                    { id: "DUN-9021", name: "Margaret Holloway", bill: 842.10, days: 41, tag: "Featured demo", region: "Dunmoor" },
+                    { id: "DUN-9021", name: "Margaret Holloway", bill: 842.10, days: 41, tag: "Threatening escalation", region: "Dunmoor" },
                     { id: "DUN-3345", name: "Edith Cargill",     bill: 723.50, days: 58, tag: "Solicitor involved", region: "Dunmoor" },
                     { id: "BAR-4401", name: "James Whitmore",    bill: 612.40, days: 28, tag: "", region: "Barrowdale" },
                     { id: "DUN-7782", name: "Patricia Okafor",   bill: 524.80, days: 19, tag: "", region: "Dunmoor" },
@@ -484,7 +484,7 @@ export default function Home() {
                   This account typically uses <strong>{account.typicalQuarterlyKwh.toLocaleString()} kWh/quarter</strong>.
                 </div>
 
-                {/* Suggested reading shortcut — for demo and training */}
+                {/* Suggested reading shortcut */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                   <span style={{ fontSize: 11, color: "var(--dim)" }}>Customer says:</span>
                   <button
@@ -497,7 +497,6 @@ export default function Home() {
                   >
                     {account.suggestedRead.toLocaleString()}
                   </button>
-                  <span style={{ fontSize: 10, color: "var(--dim)" }}>(use for this demo)</span>
                 </div>
 
                 <input
@@ -645,9 +644,6 @@ export default function Home() {
                           ? <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>⟳</span> Running…</>
                           : "Run"}
                       </button>
-                      <span style={{ fontSize: 11, color: "var(--dim)" }}>
-                        Needs <code style={{ fontSize: 10, fontFamily: "var(--font-mono)" }}>GEMINI_API_KEY</code> in .env.local
-                      </span>
                     </div>
 
                     {agentReply && (
