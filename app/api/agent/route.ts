@@ -215,14 +215,20 @@ Current account on screen:
   let reply = "I could not complete that request.";
 
   for (let i = 0; i < 5; i++) {
-    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gemini-3.8-flash", temperature: 0.3, messages, tools: activeTools }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      return NextResponse.json({ error: `Gemini ${res.status}: ${err.slice(0, 300)}` }, { status: 502 });
+    let res: Response | null = null;
+    // Retry up to 3 times on 429 with exponential backoff
+    for (let attempt = 0; attempt < 3; attempt++) {
+      res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gemini-2.5-flash-lite", temperature: 0.3, messages, tools: activeTools }),
+      });
+      if (res.status !== 429) break;
+      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+    }
+    if (!res || !res.ok) {
+      const err = await (res?.text() ?? Promise.resolve("No response"));
+      return NextResponse.json({ error: `Gemini ${res?.status ?? 0}: ${err.slice(0, 300)}` }, { status: 502 });
     }
     const data = await res.json();
     const choice = data.choices[0].message;
