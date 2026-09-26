@@ -326,14 +326,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Reading history chart */}
-                <div style={{ marginTop: 16, marginBottom: -4 }}>
-                  <div style={{ fontSize: 10, color: "var(--dim)", fontWeight: 700, letterSpacing: "0.05em", marginBottom: 6 }}>
-                    METER READING HISTORY
-                  </div>
-                  <ReadingHistoryChart history={account.readingHistory} />
-                </div>
-
                 {account.agentNotes && (
                   <div style={{
                     marginTop: 12, padding: "8px 12px", borderRadius: 8,
@@ -743,16 +735,6 @@ function CalcResult({
               }
             </span>
           </div>
-        </div>
-      )}
-
-      {/* Reading history with corrected dot */}
-      {done && (
-        <div className="card fade-up" style={{ padding: 16 }}>
-          <div style={{ fontSize: 10, color: "var(--dim)", fontWeight: 700, letterSpacing: "0.05em", marginBottom: 8 }}>
-            METER READING HISTORY — CORRECTED
-          </div>
-          <ReadingHistoryChart history={account.readingHistory} correctedRead={parsedDial} />
         </div>
       )}
 
@@ -1290,130 +1272,136 @@ function OutageAlert({ outage, customerFirstName }: { outage: OutageRecord; cust
   );
 }
 
-// ── Reading history chart ──────────────────────────────────────────
+// ── Reading history chart — quarterly usage bars ───────────────────
 function ReadingHistoryChart({
   history, correctedRead,
 }: {
   history: AccountRecord["readingHistory"];
   correctedRead?: number;
 }) {
-  const W = 520, H = 110, PAD = { t: 12, r: 16, b: 28, l: 52 };
+  // Build per-period usage deltas (skip the first point — it's just the baseline)
+  type Bar = { label: string; kwh: number; type: "actual" | "estimated" | "corrected" };
+  const bars: Bar[] = [];
+  for (let i = 1; i < history.length; i++) {
+    const prev = history[i - 1], cur = history[i];
+    const kwh = cur.read - prev.read;
+    const dt = new Date(cur.date);
+    const label = dt.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+    bars.push({ label, kwh, type: cur.type });
+  }
+  // If corrected read is supplied, replace the last (bad estimate) bar
+  if (correctedRead !== undefined) {
+    const prev = history[history.length - 2];
+    bars[bars.length - 1] = {
+      label: bars[bars.length - 1].label,
+      kwh: correctedRead - prev.read,
+      type: "corrected",
+    };
+  }
+
+  const maxKwh = Math.max(...bars.map((b) => b.kwh));
+  const W = 520, H = 130;
+  const PAD = { t: 24, r: 16, b: 28, l: 52 };
   const plotW = W - PAD.l - PAD.r;
   const plotH = H - PAD.t - PAD.b;
+  const barW = (plotW / bars.length) * 0.55;
+  const gap   = plotW / bars.length;
 
-  const allReads = history.map((r) => r.read);
-  if (correctedRead) allReads.push(correctedRead);
-  const minRead = Math.min(...allReads) * 0.995;
-  const maxRead = Math.max(...allReads) * 1.005;
+  const barColor = (type: Bar["type"]) =>
+    type === "corrected" ? "#0E9B52" :
+    type === "estimated" ? "#E02424" : "#2462E8";
+  const barFill = (type: Bar["type"]) =>
+    type === "corrected" ? "#EDFBF3" :
+    type === "estimated" ? "#FEF1F1" : "#EEF3FD";
 
-  const dates = history.map((r) => new Date(r.date).getTime());
-  const minDate = Math.min(...dates);
-  const maxDate = correctedRead
-    ? new Date("2023-10-24").getTime()
-    : Math.max(...dates);
+  const fmtKwh = (v: number) =>
+    v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
 
-  const toX = (d: string) =>
-    PAD.l + ((new Date(d).getTime() - minDate) / (maxDate - minDate)) * plotW;
-  const toY = (v: number) =>
-    PAD.t + plotH - ((v - minRead) / (maxRead - minRead)) * plotH;
-
-  const correctedDate = "2023-10-24";
-  const correctedX = correctedRead ? PAD.l + ((new Date(correctedDate).getTime() - minDate) / (maxDate - minDate)) * plotW : null;
-  const correctedY = correctedRead ? toY(correctedRead) : null;
-
-  // y-axis ticks
-  const yTicks = 3;
-  const yStep = (maxRead - minRead) / yTicks;
-
-  // path through all history points
-  const pathD = history.map((r, i) =>
-    `${i === 0 ? "M" : "L"} ${toX(r.date).toFixed(1)} ${toY(r.read).toFixed(1)}`
-  ).join(" ");
-
-  // corrected path extension
-  const lastPt = history[history.length - 1];
-  const correctedPathD = correctedRead
-    ? `M ${toX(lastPt.date).toFixed(1)} ${toY(lastPt.read).toFixed(1)} L ${correctedX!.toFixed(1)} ${correctedY!.toFixed(1)}`
-    : null;
-
-  const fmtRead = (v: number) =>
-    v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v);
-
-  const fmtDate = (d: string) => {
-    const dt = new Date(d);
-    return dt.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
-  };
+  // Y gridlines
+  const yStep = maxKwh / 3;
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      width="100%"
-      style={{ display: "block", overflow: "visible" }}
-    >
-      {/* Y axis ticks + gridlines */}
-      {Array.from({ length: yTicks + 1 }).map((_, i) => {
-        const val = minRead + yStep * i;
-        const y = toY(val);
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", overflow: "visible" }}>
+      {/* Gridlines */}
+      {[0, 1, 2, 3].map((i) => {
+        const val = yStep * i;
+        const y = PAD.t + plotH - (val / maxKwh) * plotH;
         return (
           <g key={i}>
             <line x1={PAD.l} y1={y} x2={W - PAD.r} y2={y}
-              stroke="#E4E8F0" strokeWidth={1} />
-            <text x={PAD.l - 6} y={y + 4} textAnchor="end"
-              fontSize={9} fill="#8896A8">{fmtRead(val)}</text>
+              stroke="#E4E8F0" strokeWidth={1} strokeDasharray={i === 0 ? "0" : "3 2"} />
+            <text x={PAD.l - 6} y={y + 4} textAnchor="end" fontSize={9} fill="#8896A8">
+              {fmtKwh(val)}
+            </text>
           </g>
         );
       })}
 
-      {/* History line */}
-      <path d={pathD} fill="none" stroke="#CBD5E1" strokeWidth={1.5} strokeLinejoin="round" />
+      {/* Bars */}
+      {bars.map((b, i) => {
+        const cx = PAD.l + gap * i + gap / 2;
+        const bh = Math.max(2, (b.kwh / maxKwh) * plotH);
+        const by = PAD.t + plotH - bh;
+        const color = barColor(b.type);
+        const fill  = barFill(b.type);
+        const isWrong = b.type === "estimated";
 
-      {/* Corrected extension (green dashed) */}
-      {correctedPathD && (
-        <path d={correctedPathD} fill="none" stroke="#0E9B52"
-          strokeWidth={2} strokeDasharray="4 3" strokeLinejoin="round" />
-      )}
-
-      {/* History dots */}
-      {history.map((r) => {
-        const x = toX(r.date), y = toY(r.read);
-        const isEstimated = r.type === "estimated";
-        const isLast = r === history[history.length - 1];
         return (
-          <g key={r.date}>
-            <circle cx={x} cy={y} r={isLast && isEstimated ? 6 : 4}
-              fill={isEstimated ? "#FEF1F1" : "#EEF3FD"}
-              stroke={isEstimated ? "#E02424" : "#2462E8"}
-              strokeWidth={isLast && isEstimated ? 2 : 1.5} />
-            {/* Date label */}
-            <text x={x} y={H - 6} textAnchor="middle"
-              fontSize={8.5} fill="#8896A8">{fmtDate(r.date)}</text>
+          <g key={b.label}>
+            {/* Bar */}
+            <rect x={cx - barW / 2} y={by} width={barW} height={bh}
+              fill={fill} stroke={color} strokeWidth={1.5} rx={3} />
+
+            {/* Value label above bar */}
+            <text x={cx} y={by - 4} textAnchor="middle" fontSize={isWrong ? 10 : 9}
+              fontWeight={isWrong ? "bold" : "normal"} fill={color}>
+              {fmtKwh(b.kwh)}
+            </text>
+
+            {/* "~Nx typical" annotation on the bad bar */}
+            {isWrong && bars.filter(x => x.type !== "estimated").length > 0 && (() => {
+              const typicalAvg = bars.filter(x => x.type !== "estimated" && x.type !== "corrected")
+                .reduce((s, x) => s + x.kwh, 0) /
+                Math.max(1, bars.filter(x => x.type !== "estimated" && x.type !== "corrected").length);
+              const multiple = Math.round(b.kwh / typicalAvg);
+              return (
+                <text x={cx} y={by - 16} textAnchor="middle" fontSize={8.5}
+                  fill="#E02424" opacity={0.8}>
+                  ~{multiple}× typical
+                </text>
+              );
+            })()}
+
+            {/* X label */}
+            <text x={cx} y={H - 6} textAnchor="middle" fontSize={9} fill="#8896A8">
+              {b.label}
+            </text>
           </g>
         );
       })}
-
-      {/* Corrected dot */}
-      {correctedRead && correctedX !== null && correctedY !== null && (
-        <g>
-          <circle cx={correctedX} cy={correctedY} r={6}
-            fill="#EDFBF3" stroke="#0E9B52" strokeWidth={2} />
-          <text x={correctedX} y={H - 6} textAnchor="middle"
-            fontSize={8.5} fill="#0E9B52">Oct '23</text>
-        </g>
-      )}
 
       {/* Legend */}
-      <g transform={`translate(${PAD.l}, ${PAD.t - 2})`}>
-        <circle cx={0} cy={0} r={3.5} fill="#EEF3FD" stroke="#2462E8" strokeWidth={1.5} />
-        <text x={7} y={4} fontSize={9} fill="#8896A8">Actual read</text>
-        <circle cx={64} cy={0} r={3.5} fill="#FEF1F1" stroke="#E02424" strokeWidth={1.5} />
-        <text x={71} y={4} fontSize={9} fill="#8896A8">SYS-06 estimate</text>
-        {correctedRead && (
+      <g transform={`translate(${PAD.l}, 10)`}>
+        <rect x={0} y={-6} width={10} height={10} rx={2}
+          fill="#EEF3FD" stroke="#2462E8" strokeWidth={1.5} />
+        <text x={14} y={4} fontSize={9} fill="#8896A8">Actual usage</text>
+        <rect x={76} y={-6} width={10} height={10} rx={2}
+          fill="#FEF1F1" stroke="#E02424" strokeWidth={1.5} />
+        <text x={90} y={4} fontSize={9} fill="#8896A8">SYS-06 estimate</text>
+        {correctedRead !== undefined && (
           <>
-            <circle cx={158} cy={0} r={3.5} fill="#EDFBF3" stroke="#0E9B52" strokeWidth={1.5} />
-            <text x={165} y={4} fontSize={9} fill="#0E9B52">Corrected</text>
+            <rect x={176} y={-6} width={10} height={10} rx={2}
+              fill="#EDFBF3" stroke="#0E9B52" strokeWidth={1.5} />
+            <text x={190} y={4} fontSize={9} fill="#0E9B52">Corrected</text>
           </>
         )}
       </g>
+
+      {/* kWh unit label */}
+      <text x={PAD.l - 6} y={PAD.t - 10} textAnchor="middle" fontSize={8.5}
+        fill="#8896A8" transform={`rotate(-90, ${PAD.l - 36}, ${PAD.t + plotH / 2})`}>
+        kWh / period
+      </text>
     </svg>
   );
 }
