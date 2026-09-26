@@ -24,6 +24,10 @@ export default function Home() {
   const [sessionBills, setSessionBills] = useState(0);
   const [sessionCorrected, setSessionCorrected] = useState(0);
   const [sessionDays, setSessionDays] = useState(0);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [agentQuery, setAgentQuery] = useState("Correct the open case from the dial read and close it.");
+  const [agentRunning, setAgentRunning] = useState(false);
+  const [agentReply, setAgentReply] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const dialRef = useRef<HTMLInputElement>(null);
 
@@ -76,9 +80,55 @@ export default function Home() {
     setSessionDays((p) => p + account.openDays);
   }
 
+  async function handleFixWithRead(read: number) {
+    if (!account) return;
+    setRunning(true);
+    await new Promise((r) => setTimeout(r, 420));
+    const res = runCobolEngine(account.id, account.tariffCode, account.previousRead, read, new Date("2023-10-24"));
+    setParsedDial(read);
+    setResult(res);
+    setRunning(false);
+    setStep("result");
+    setRebillsSaved((p) => p + UNIT_COSTS.manualBillCorrection);
+    setCallbacksSaved((p) => p + UNIT_COSTS.inboundCall);
+    setSessionBills((p) => p + 1);
+    setSessionCorrected((p) => p + Math.max(0, account.estimatedBill - res.total));
+    setSessionDays((p) => p + account.openDays);
+  }
+
+  async function handleAgentRun() {
+    if (!account || agentRunning) return;
+    setAgentRunning(true);
+    setAgentReply("");
+    try {
+      const res = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: agentQuery,
+          accountId: account.id,
+          dialRead: parseInt(dialRead, 10) || account.suggestedRead,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Agent failed");
+      setAgentReply(data.reply || "");
+      for (const action of (data.actions || []) as { type: string; accountId?: string; read?: number }[]) {
+        if (action.type === "rate" && action.read) {
+          setDialRead(String(action.read));
+          await handleFixWithRead(action.read);
+        }
+      }
+    } catch (err) {
+      setAgentReply(err instanceof Error ? err.message : "Agent error");
+    }
+    setAgentRunning(false);
+  }
+
   function reset() {
     setStep("search"); setAccount(null); setDialRead("");
     setResult(null); setReceiptSent(false); setParsedDial(0);
+    setAgentOpen(false); setAgentReply(""); setAgentRunning(false);
   }
 
   return (
@@ -518,6 +568,69 @@ export default function Home() {
                 <div style={{ textAlign: "center", fontSize: 10, color: "var(--dim)", marginTop: 8 }}>
                   Ctrl+Enter · Aurora SYS-01 rating engine · batch record ready for 2am ingest
                 </div>
+              </div>
+
+              {/* ── AI Agent panel ─────────────────────────── */}
+              <div className="card" style={{ padding: 0, overflow: "hidden", border: "1px solid #2A1F5A" }}>
+                <button
+                  onClick={() => setAgentOpen((v) => !v)}
+                  style={{
+                    width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "12px 16px", background: "#0D0A1A", border: "none", cursor: "pointer",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{
+                      width: 20, height: 20, borderRadius: 6, background: "#6366F1",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 10, color: "#fff", fontWeight: 900, flexShrink: 0,
+                    }}>✦</div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#A5B4FC" }}>Agent auto-fix</span>
+                    <span style={{ fontSize: 11, color: "#4B5563" }}>— let the AI handle it</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: "#4B5563" }}>{agentOpen ? "▲" : "▼"}</span>
+                </button>
+
+                {agentOpen && (
+                  <div style={{ padding: "12px 16px 16px", background: "#0A0814", borderTop: "1px solid #1E1640" }}>
+                    <textarea
+                      value={agentQuery}
+                      onChange={(e) => setAgentQuery(e.target.value)}
+                      rows={2}
+                      style={{
+                        width: "100%", padding: "8px 10px", fontSize: 12, color: "#C4B5FD",
+                        background: "#120E24", border: "1px solid #2A1F5A", borderRadius: 8,
+                        resize: "none", fontFamily: "var(--font-mono)", boxSizing: "border-box",
+                      }}
+                      placeholder="Ask the agent..."
+                    />
+                    <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+                      <button
+                        onClick={handleAgentRun}
+                        disabled={agentRunning}
+                        style={{
+                          padding: "7px 16px", fontSize: 12, fontWeight: 700,
+                          background: agentRunning ? "#1E1640" : "#6366F1",
+                          color: "#fff", border: "none", borderRadius: 8, cursor: agentRunning ? "default" : "pointer",
+                        }}
+                      >
+                        {agentRunning ? "Running…" : "Run"}
+                      </button>
+                      <span style={{ fontSize: 11, color: "#4B5563" }}>
+                        Needs <code style={{ fontSize: 10 }}>OPENAI_API_KEY</code> in .env.local
+                      </span>
+                    </div>
+                    {agentReply && (
+                      <div style={{
+                        marginTop: 10, padding: "10px 12px", background: "#0D1020",
+                        border: "1px solid #1E2A50", borderRadius: 8,
+                        fontSize: 12, color: "#94A3B8", lineHeight: 1.6,
+                      }}>
+                        {agentReply}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <button onClick={reset} style={{ background: "none", border: "none", color: "var(--dim)", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
