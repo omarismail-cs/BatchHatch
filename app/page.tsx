@@ -367,14 +367,12 @@ export default function Home() {
                   </div>
                   <div style={{ fontSize: 20, color: "var(--red-mid)" }}>→</div>
                   <div>
-                    <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Customer says real dial reads</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: "var(--muted)", lineHeight: 1.1 }}>
-                      {account.estimatedRead - account.previousRead > 0
-                        ? `Off by ${(account.estimatedRead - account.previousRead).toLocaleString()} kWh`
-                        : "—"}
+                    <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Customer says dial reads</div>
+                    <div style={{ fontSize: 28, fontWeight: 900, color: "var(--text)", lineHeight: 1 }}>
+                      {account.suggestedRead.toLocaleString()}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                      Prev. read: {account.previousRead.toLocaleString()}
+                      {(account.estimatedRead - account.suggestedRead).toLocaleString()} kWh less than guessed
                     </div>
                   </div>
                 </div>
