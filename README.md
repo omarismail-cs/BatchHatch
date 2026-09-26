@@ -1,6 +1,6 @@
 # BatchHatch
 
-**CGI Challenge — Northwind Utilities · Barrowdale & Dunmoor billing correction**
+**Hack the Hill III · CGI Challenge — Northwind Utilities · Barrowdale & Dunmoor billing correction**
 
 > Fix overbilled accounts while the customer is still on the phone.  
 > Aurora's 1998 COBOL rating engine, running in the browser in 15ms.
@@ -89,4 +89,4 @@ All data from the official Northwind challenge package:
 | Moaz Sholook | |
 | Iman Ullah | |
 
-CGI Challenge · Sep 2026
+Hack the Hill III · CGI Challenge · Sep 2026
