@@ -94,12 +94,12 @@ export default function Home() {
       }}>
         {/* Logo — cropped via overflow hidden */}
         <button onClick={reset} style={{ display: "flex", alignItems: "center", flexShrink: 0, cursor: "pointer", background: "none", border: "none" }}>
-          <div style={{ width: 180, height: 44, overflow: "hidden", position: "relative", flexShrink: 0 }}>
+          <div style={{ width: 200, height: 40, overflow: "hidden", position: "relative", flexShrink: 0 }}>
               <Image
               src="/logo.png"
               alt="BatchHatch"
               fill
-              sizes="180px"
+              sizes="200px"
               style={{ objectFit: "cover", objectPosition: "center 50%" }}
               priority
             />
