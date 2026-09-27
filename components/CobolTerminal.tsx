@@ -43,9 +43,9 @@ export default function CobolTerminal({ result, running, estimatedBill, verified
         <div className="flex items-center gap-3">
           {/* Traffic lights — purely decorative, signals "terminal inside" */}
           <div className="flex gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#FF5F56" }} />
-            <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#FFBD2E" }} />
-            <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#27C93F" }} />
+            <div className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--border-md)" }} />
+            <div className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--border-md)" }} />
+            <div className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--border-md)" }} />
           </div>
           <div>
             <div className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>
@@ -239,7 +239,7 @@ export default function CobolTerminal({ result, running, estimatedBill, verified
               <button
                 onClick={onShowReceipt}
                 className="flex-1 rounded-xl py-3 text-[13px] font-bold transition-all hover:opacity-90 flex items-center justify-center gap-2"
-                style={{ background: "var(--blue)", color: "#fff", boxShadow: "0 2px 8px rgba(37,99,235,0.3)" }}
+                style={{ background: "var(--text)", color: "#fff" }}
               >
                 📄 Generate clearance
               </button>

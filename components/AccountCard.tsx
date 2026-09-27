@@ -65,8 +65,8 @@ export default function AccountCard({ account, onSimulated, onClear }: Props) {
               <span
                 className="text-[10px] font-bold rounded-md px-1.5 py-0.5"
                 style={{
-                  background: account.region === "Dunmoor" ? "#EDE9FE" : "#EFF6FF",
-                  color:      account.region === "Dunmoor" ? "#6D28D9" : "#1D4ED8",
+                  background: "var(--hint)",
+                  color: "var(--muted)",
                 }}
               >
                 {account.id}
@@ -93,7 +93,7 @@ export default function AccountCard({ account, onSimulated, onClear }: Props) {
             {account.agentNotes && (
               <div
                 className="mt-2 rounded-lg px-3 py-2 text-[11px]"
-                style={{ background: "var(--red-light)", color: "#7F1D1D", border: "1px solid var(--red-mid)" }}
+                style={{ background: "var(--hint)", color: "var(--text)", border: "1px solid var(--border)" }}
               >
                 {account.agentNotes}
               </div>
