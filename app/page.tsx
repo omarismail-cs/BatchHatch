@@ -9,7 +9,7 @@ import { UNIT_COSTS } from "@/lib/data";
 import { loadMeterReads, saveMeterRead, METERHUB_READ_DATE, MeterRead, nextDialEstimate, formatMeterDate } from "@/lib/meterhub";
 import { INBOUND_ROWS, InboundRow } from "@/lib/inbound";
 
-// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types ────────────────────────────────────────────────────────
 type Step = "search" | "account" | "result";
 type QueuedRecord = {
   id: string;
@@ -68,7 +68,7 @@ export default function Home() {
   const [waiting, setWaiting] = useState<InboundRow[]>(INBOUND_ROWS);
   const [arrived, setArrived] = useState<InboundRow[]>([]);
   const [notice, setNotice] = useState("");
-  const [deskLog, setDeskLog] = useState<{ id: string; action: "HOLD" | "RATE"; name: string; detail: string }[]>([]);
+  const [ratedBills, setRatedBills] = useState<Record<string, { read: number; total: number }>>({});
   const [deskRunning, setDeskRunning] = useState(false);
   const billHeld = !!(account && heldAccounts.has(account.id));
   function placeHold(acc: { id: string; name: string }) {
@@ -102,7 +102,7 @@ export default function Home() {
   }
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentVisible, setAgentVisible] = useState(false);
-  const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2â€“3 sentences.");
+  const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences.");
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentReply, setAgentReply] = useState("");
   const [autoAllow, setAutoAllow] = useState(true);
@@ -160,12 +160,12 @@ export default function Home() {
     }
   }
 
-  // Inline validation â€” computed from current dialRead + loaded account
+  // Inline validation — computed from current dialRead + loaded account
   const dialParsed = parseInt(dialRead, 10);
   const dialUsage = account ? dialParsed - account.previousRead : 0;
   const dialBelowPrev    = !!(account && dialRead && !isNaN(dialParsed) && dialParsed < account.previousRead);
   const dialNegativeUsage = !!(account && dialRead && !isNaN(dialParsed) && dialParsed === account.previousRead);
-  // Flag usage that far exceeds typical quarterly consumption â€” ceiling is 3Ã— typical to allow for edge cases
+  // Flag usage that far exceeds typical quarterly consumption — ceiling is 3× typical to allow for edge cases
   const dialUnrealistic  = !!(account && dialRead && !isNaN(dialParsed) && dialUsage > account.typicalQuarterlyKwh * 3);
   const dialValid = !!(account && dialRead && isPlausibleReading(account, dialParsed));
   const autoCandidateRead = account
@@ -196,6 +196,7 @@ export default function Home() {
     setSessionCorrected((p) => p + Math.max(0, acc.estimatedBill - res.total));
     setSessionDays((p) => p + acc.openDays);
     setClearedIds((prev) => new Set(prev).add(acc.id));
+    setRatedBills((prev) => ({ ...prev, [acc.id]: { read, total: res.total } }));
     rememberRead(acc.id, read);
     releaseHold(acc.id);
     setBatchQueue((q) => [...q, {
@@ -298,18 +299,12 @@ export default function Home() {
   async function workQueue() {
     if (deskRunning || activeCases.length === 0) return;
     setDeskRunning(true);
-    setDeskLog([]);
     for (const row of activeCases) {
       const full = findAccount(row.id);
       if (!full) continue;
       const escalate = full.status === "ESCALATED" || /solicitor|regulator|escalat/i.test(row.tag);
-      if (escalate) {
-        placeHold(full);
-        setDeskLog((lines) => [...lines, { id: full.id, action: "HOLD", name: full.name, detail: row.tag || "Escalated" }]);
-      } else {
-        const res = await rateAccount(full, full.suggestedRead, true);
-        setDeskLog((lines) => [...lines, { id: full.id, action: "RATE", name: full.name, detail: `${full.suggestedRead.toLocaleString()} → $${res.total.toFixed(2)}` }]);
-      }
+      if (escalate) placeHold(full);
+      else await rateAccount(full, full.suggestedRead, true);
       await new Promise((r) => setTimeout(r, 420));
     }
     setDeskRunning(false);
@@ -324,7 +319,7 @@ export default function Home() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
-      {/* â”€â”€ Navbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Navbar ──────────────────────────────────────────── */}
       <nav style={{
         background: "color-mix(in srgb, #f3e6d8 70%, transparent)",
         backdropFilter: "blur(10px)",
@@ -388,7 +383,7 @@ export default function Home() {
         </a>
       </nav>
 
-      {/* â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Main ────────────────────────────────────────────── */}
       <main style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 16px 60px" }}>
         <div style={{ width: "100%", maxWidth: 580 }}>
 
@@ -399,7 +394,7 @@ export default function Home() {
             onGoAccount={() => setStep("account")}
           />
 
-          {/* â”€â”€ STEP 1: Search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── STEP 1: Search ──────────────────────────────── */}
           {step === "search" && (
             <div className="fade-up">
               <div style={{ marginBottom: 24 }}>
@@ -439,7 +434,7 @@ export default function Home() {
                           else handleSearch(query);
                         }
                       }}
-                      placeholder='Type account ID or name â€” e.g. "DUN-9021" or "Margaret"'
+                      placeholder='Type account ID or name — e.g. "DUN-9021" or "Margaret"'
                       style={{
                         flex: 1, background: "transparent", border: "none", outline: "none",
                         fontSize: 14, color: "var(--text)", padding: "10px 12px",
@@ -500,7 +495,7 @@ export default function Home() {
                       >
                         <span style={{ minWidth: 0 }}>
                           <span style={{ display: "block", fontSize: 14, fontWeight: 500, color: "var(--text)" }}>{a.name}</span>
-                          <span className="mono" style={{ fontSize: 11, color: "var(--dim)" }}>{a.id} Â· {a.region}</span>
+                          <span className="mono" style={{ fontSize: 11, color: "var(--dim)" }}>{a.id} · {a.region}</span>
                         </span>
                         <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>
                           ${a.estimatedBill.toFixed(2)}
@@ -553,31 +548,6 @@ export default function Home() {
                     {deskRunning ? "Working the queue…" : "Work the queue"}
                   </button>
                 </div>
-                {deskLog.length > 0 && (
-                  <div className="card" style={{ marginBottom: 10, width: "100%", overflow: "hidden" }}>
-                    {deskLog.map((line, i) => (
-                      <div
-                        key={line.id}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "52px minmax(0, 1fr) auto",
-                          columnGap: 12,
-                          alignItems: "baseline",
-                          padding: "8px 14px",
-                          borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                          fontSize: 13,
-                          lineHeight: 1.35,
-                        }}
-                      >
-                        <span style={{ color: line.action === "HOLD" ? "var(--hold)" : "var(--muted)", fontWeight: 500 }}>
-                          {line.action === "HOLD" ? "Held" : "Rated"}
-                        </span>
-                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontWeight: 500 }}>{line.name}</span>
-                        <span style={{ color: "var(--dim)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{line.detail}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
                 <div className="card ledger">
                   {intakeRecords.filter((issue) => !issue.linkedAccountId).map((issue) => (
                     <button key={issue.reference} onClick={() => setSelectedIntake(issue)} className="ledger-row" type="button">
@@ -597,6 +567,7 @@ export default function Home() {
                   {openCases.length === 0 && openIntakeCount === 0 ? (
                     <div style={{ padding: "16px", fontSize: 13, color: "var(--muted)" }}>No open cases</div>
                   ) : openCases.map((a) => {
+                    const rated = ratedBills[a.id];
                     const cleared = clearedIds.has(a.id);
                     return (
                     <button
@@ -606,7 +577,7 @@ export default function Home() {
                       className="ledger-row"
                       disabled={cleared}
                       style={{
-                        opacity: cleared ? 0.38 : 1,
+                        opacity: cleared ? 0.55 : 1,
                         cursor: cleared ? "default" : "pointer",
                         pointerEvents: cleared ? "none" : "auto",
                       }}
@@ -624,9 +595,9 @@ export default function Home() {
                       >
                         <span className="mono" style={{ fontSize: 11, color: "var(--dim)" }}>{a.id}</span>
                         <span style={{ minWidth: 0, lineHeight: 1.25 }}>
-                          <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", display: "block", textDecoration: cleared ? "line-through" : "none" }}>{a.name}</span>
-                          <span style={{ fontSize: 12, color: cleared ? "var(--dim)" : a.tag ? "var(--blue)" : "var(--dim)" }}>
-                            {cleared ? "corrected" : (a.tag || a.region)}
+                          <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", display: "block" }}>{a.name}</span>
+                          <span style={{ fontSize: 12, color: a.tag && !cleared ? "var(--blue)" : "var(--dim)" }}>
+                            {cleared ? `${rated.read.toLocaleString()} kWh` : (a.tag || a.region)}
                           </span>
                         </span>
                         <span style={{ textAlign: "right", lineHeight: 1.25 }}>
@@ -637,8 +608,8 @@ export default function Home() {
                               background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)",
                             }}>HELD</span>
                           ) : null}
-                          <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text)", display: "block", fontVariantNumeric: "tabular-nums" }}>${a.bill.toFixed(2)}</span>
-                          <span style={{ fontSize: 11, color: "var(--dim)" }}>{cleared ? "fixed" : `${a.days} days`}</span>
+                          <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text)", display: "block", fontVariantNumeric: "tabular-nums" }}>${(rated ? rated.total : a.bill).toFixed(2)}</span>
+                          <span style={{ fontSize: 11, color: "var(--dim)" }}>{cleared ? "rated" : `${a.days} days`}</span>
                         </span>
                       </div>
                     </button>
@@ -649,11 +620,11 @@ export default function Home() {
             </div>
           )}
 
-          {/* â”€â”€ STEP 2: Account loaded â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── STEP 2: Account loaded ──────────────────────── */}
           {step === "account" && account && (
             <div className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-              {/* Outage alert â€” only when account is in an active incident zone */}
+              {/* Outage alert — only when account is in an active incident zone */}
               {account.outage && (
                 <OutageAlert
                   outage={account.outage}
@@ -666,7 +637,7 @@ export default function Home() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                   <div>
                     <div style={{ fontSize: 10, color: "var(--dim)", marginBottom: 4, letterSpacing: "0.05em" }}>
-                      {account.region} Â· {account.id} Â· {account.openDays} days open
+                      {account.region} · {account.id} · {account.openDays} days open
                     </div>
                     <div style={{ fontSize: 18, fontWeight: 500, color: "var(--text)" }}>{account.name}</div>
                     <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{account.address}</div>
@@ -690,7 +661,7 @@ export default function Home() {
                       SYS-06 guessed {account.estimatedRead.toLocaleString()} kWh
                     </div>
                   </div>
-                  <div style={{ fontSize: 20, color: "var(--red-mid)" }}>â†’</div>
+                  <div style={{ fontSize: 20, color: "var(--red-mid)" }}>→</div>
                   <div>
                     <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Meter last read</div>
                     <div className="figure" style={{ fontSize: 26, color: "var(--text)", lineHeight: 1.1 }}>
@@ -723,7 +694,7 @@ export default function Home() {
                   Customer Dial Read
                 </div>
 
-                {/* Previous read anchor â€” context for the agent on the call */}
+                {/* Previous read anchor — context for the agent on the call */}
                 {(() => {
                   const BILLING_DATE = new Date("2023-10-24");
                   const prevDate = new Date(account.previousReadDate);
@@ -740,7 +711,7 @@ export default function Home() {
                       borderRadius: 10,
                       border: "1px solid var(--border)", background: "var(--bg)",
                     }}>
-                      {/* Col 1 â€” Last verified read */}
+                      {/* Col 1 — Last verified read */}
                       <div style={{ padding: "10px 12px", borderRadius: "10px 0 0 10px" }}>
                         <div style={{ fontSize: 9, color: "var(--dim)", fontWeight: 700, letterSpacing: "0.05em", marginBottom: 4 }}>LAST VERIFIED READ</div>
                         <div style={{ fontSize: 15, fontWeight: 500, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>
@@ -752,7 +723,7 @@ export default function Home() {
                       {/* Divider */}
                       <div style={{ background: "var(--border)" }} />
 
-                      {/* Col 2 â€” Days unread */}
+                      {/* Col 2 — Days unread */}
                       <div style={{ padding: "10px 12px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
                           <div style={{ fontSize: 9, color: "var(--dim)", fontWeight: 700, letterSpacing: "0.05em" }}>DAYS UNREAD</div>
@@ -775,7 +746,7 @@ export default function Home() {
                       {/* Divider */}
                       <div style={{ background: "var(--border)" }} />
 
-                      {/* Col 3 â€” System guessed */}
+                      {/* Col 3 — System guessed */}
                       <div style={{ padding: "10px 12px", borderRadius: "0 10px 10px 0" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
                           <div style={{ fontSize: 9, color: "var(--dim)", fontWeight: 700, letterSpacing: "0.05em" }}>SYSTEM GUESSED</div>
@@ -783,11 +754,11 @@ export default function Home() {
                             <>
                               <strong style={{ color: "#fff" }}>How SYS-06 built this estimate</strong><br /><br />
                               <span style={{ color: "#a8a29e" }}>Formula:</span>{" "}
-                              last read + (daily avg Ã— days in period)<br /><br />
+                              last read + (daily avg × days in period)<br /><br />
                               <span style={{ color: "#fffcf8" }}>{account.previousRead.toLocaleString()}</span>
-                              {" + "}(<span style={{ color: "#fffcf8" }}>{impliedDailyRate} kWh/day</span> Ã— {daysSince} days)
+                              {" + "}(<span style={{ color: "#fffcf8" }}>{impliedDailyRate} kWh/day</span> × {daysSince} days)
                               {" = "}<span style={{ color: "#fffcf8" }}>{account.estimatedRead.toLocaleString()}</span><br /><br />
-                              The implied rate of <strong style={{ color: "#fffcf8" }}>{impliedDailyRate} kWh/day</strong> is roughly <strong style={{ color: "#fffcf8" }}>{Math.round(impliedDailyRate / typicalDailyRate)}Ã—</strong> the typical rate of ~{typicalDailyRate} kWh/day for this household. SYS-06's seasonal curve (calibrated 2010â€“2012) hasn't been updated and doesn't account for changes in this customer's usage pattern.
+                              The implied rate of <strong style={{ color: "#fffcf8" }}>{impliedDailyRate} kWh/day</strong> is roughly <strong style={{ color: "#fffcf8" }}>{Math.round(impliedDailyRate / typicalDailyRate)}×</strong> the typical rate of ~{typicalDailyRate} kWh/day for this household. SYS-06's seasonal curve (calibrated 2010–2012) hasn't been updated and doesn't account for changes in this customer's usage pattern.
                             </>
                           } />
                         </div>
@@ -795,14 +766,14 @@ export default function Home() {
                           {account.estimatedRead.toLocaleString()} kWh
                         </div>
                         <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 2 }}>
-                          ~{impliedDailyRate} kWh/day implied Â· typical ~{typicalDailyRate}
+                          ~{impliedDailyRate} kWh/day implied · typical ~{typicalDailyRate}
                         </div>
                       </div>
                     </div>
                   );
                 })()}
 
-                {/* â”€â”€ Mechanical dial visualiser â”€â”€ */}
+                {/* ── Mechanical dial visualiser ── */}
                 <DialMeter
                   value={dialRead}
                   onChange={(v) => setDialRead(v)}
@@ -815,7 +786,7 @@ export default function Home() {
                   <InfoTip content={
                     <>
                       <strong style={{ color: "#fff" }}>Why must it be higher?</strong><br />
-                      Mechanical dial meters only ever count upward â€” they record total cumulative kWh since installation, never going backwards. The last verified read was {account.previousRead.toLocaleString()} on {account.previousReadDate}. A lower number would mean either a misread dial or an extremely rare meter rollover past 99,999.
+                      Mechanical dial meters only ever count upward — they record total cumulative kWh since installation, never going backwards. The last verified read was {account.previousRead.toLocaleString()} on {account.previousReadDate}. A lower number would mean either a misread dial or an extremely rare meter rollover past 99,999.
                     </>
                   } />.{" "}
                   This account typically uses <strong>{account.typicalQuarterlyKwh.toLocaleString()} kWh/quarter</strong>.
@@ -858,12 +829,12 @@ export default function Home() {
                 <div style={{ minHeight: 20, marginBottom: 10 }}>
                   {dialBelowPrev && (
                     <div style={{ fontSize: 11, color: "var(--red)", fontWeight: 600 }}>
-                      Reading {dialParsed.toLocaleString()} is below the last verified read of {account.previousRead.toLocaleString()} â€” check the meter again.
+                      Reading {dialParsed.toLocaleString()} is below the last verified read of {account.previousRead.toLocaleString()} — check the meter again.
                     </div>
                   )}
                   {dialNegativeUsage && (
                     <div style={{ fontSize: 11, color: "var(--red)", fontWeight: 600 }}>
-                      Reading matches the last verified read exactly â€” usage would be zero. Check the meter.
+                      Reading matches the last verified read exactly — usage would be zero. Check the meter.
                     </div>
                   )}
                   {dialUnrealistic && !dialBelowPrev && !dialNegativeUsage && (
@@ -872,21 +843,21 @@ export default function Home() {
                       borderRadius: 10, padding: "10px 12px",
                     }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--red)", marginBottom: 4 }}>
-                        Reading doesn&apos;t add up â€” do not proceed
+                        Reading doesn&apos;t add up — do not proceed
                       </div>
                       <div style={{ fontSize: 11, color: "var(--red)", lineHeight: 1.6 }}>
-                        {dialUsage.toLocaleString()} kWh implied â€” that&apos;s{" "}
-                        <strong>{(dialUsage / account.typicalQuarterlyKwh).toFixed(1)}Ã—</strong> this account&apos;s
+                        {dialUsage.toLocaleString()} kWh implied — that&apos;s{" "}
+                        <strong>{(dialUsage / account.typicalQuarterlyKwh).toFixed(1)}×</strong> this account&apos;s
                         typical quarterly usage of {account.typicalQuarterlyKwh.toLocaleString()} kWh.
                         A plausible reading would be under{" "}
                         <strong>{(account.previousRead + account.typicalQuarterlyKwh * 3).toLocaleString()}</strong>.
-                        Ask the customer to re-read the dial â€” they may have misread a digit.
+                        Ask the customer to re-read the dial — they may have misread a digit.
                       </div>
                     </div>
                   )}
                   {dialValid && (
                     <div style={{ fontSize: 11, color: "var(--green)", fontWeight: 600 }}>
-                      Usage: {dialUsage.toLocaleString()} kWh â€” plausible.
+                      Usage: {dialUsage.toLocaleString()} kWh — plausible.
                     </div>
                   )}
                 </div>
@@ -909,13 +880,13 @@ export default function Home() {
                   onMouseLeave={(e) => { if (dialValid && !running) e.currentTarget.style.background = "var(--blue)"; }}
                 >
                   {running ? (
-                    <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>âŸ³</span> Running COBOL engineâ€¦</>
+                    <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>⟳</span> Running COBOL engine…</>
                   ) : (
                     <>Correct the bill</>
                   )}
                 </button>
                 <div style={{ textAlign: "center", fontSize: 10, color: "var(--dim)", marginTop: 8 }}>
-                  Ctrl+Enter Â· Aurora SYS-01 rating engine Â· batch record ready for 2am ingest
+                  Ctrl+Enter · Aurora SYS-01 rating engine · batch record ready for 2am ingest
                 </div>
 
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
@@ -930,7 +901,7 @@ export default function Home() {
                       borderRadius: 10, cursor: "pointer",
                     }}
                   >
-                    {billHeld ? "Bill held â€” click to release" : "Hold tonight's bill dispatch"}
+                    {billHeld ? "Bill held — click to release" : "Hold tonight's bill dispatch"}
                   </button>
                   {!billHeld && (
                     <div style={{ fontSize: 12, color: "var(--dim)", textAlign: "center", marginTop: 6 }}>
@@ -943,7 +914,7 @@ export default function Home() {
               {billHeld && (
                 <div className="card fade-up" style={{ padding: "16px 20px", background: "var(--hold-light)", borderColor: "var(--hold-mid)" }}>
                   <div style={{ fontSize: 14, fontWeight: 500, color: "var(--hold-dark)", marginBottom: 4 }}>
-                    Bill held â€” ${account.estimatedBill.toFixed(2)} will not dispatch tonight
+                    Bill held — ${account.estimatedBill.toFixed(2)} will not dispatch tonight
                   </div>
                   <div style={{ fontSize: 13, color: "var(--hold-dark)", lineHeight: 1.55 }}>
                     The 2am SYS-01 batch job will skip this account. {account.name.split(" ")[0]} won&apos;t receive the estimated bill while you get a verified dial read. Case stays open.
@@ -951,7 +922,7 @@ export default function Home() {
                 </div>
               )}
 
-              {/* â”€â”€ AI Agent panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+              {/* ── AI Agent panel ─────────────────────────── */}
               {!agentVisible && (
                 <button
                   onClick={() => { setAgentVisible(true); setAgentOpen(true); }}
@@ -966,7 +937,7 @@ export default function Home() {
                     border: "1px solid var(--blue-mid)", display: "inline-flex",
                     alignItems: "center", justifyContent: "center",
                     fontSize: 9, color: "var(--blue)", flexShrink: 0,
-                  }}>âœ¦</span>
+                  }}>✦</span>
                   <span style={{ textDecoration: "underline", textDecorationStyle: "dotted" }}>Show AI agent</span>
                 </button>
               )}
@@ -984,17 +955,17 @@ export default function Home() {
                       width: 20, height: 20, borderRadius: 6, background: "var(--blue)",
                       display: "flex", alignItems: "center", justifyContent: "center",
                       fontSize: 10, color: "#fff", fontWeight: 500, flexShrink: 0,
-                    }}>âœ¦</div>
+                    }}>✦</div>
                     <span style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)" }}>Agent auto-fix</span>
-                    <span style={{ fontSize: 11, color: "var(--dim)" }}>â€” let the AI handle it</span>
+                    <span style={{ fontSize: 11, color: "var(--dim)" }}>— let the AI handle it</span>
                   </div>
-                  <span style={{ fontSize: 11, color: "var(--dim)" }}>{agentOpen ? "â–²" : "â–¼"}</span>
+                  <span style={{ fontSize: 11, color: "var(--dim)" }}>{agentOpen ? "▲" : "▼"}</span>
                 </button>
 
                 {agentOpen && (
                   <div style={{ padding: "12px 16px 16px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
 
-                    {/* Explicit automation policy â€” enabled for eligible, non-escalated cases only */}
+                    {/* Explicit automation policy — enabled for eligible, non-escalated cases only */}
                     <div style={{
                       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
                       padding: "10px 12px", marginBottom: 12, borderRadius: 10,
@@ -1032,16 +1003,16 @@ export default function Home() {
                         color: autoEligible ? "var(--green)" : "var(--amber)",
                       }}>
                         {autoEligible
-                          ? `âœ“ Eligible â€” ${autoCandidateRead.toLocaleString()} kWh passes the automation rules`
-                          : "Review required â€” this case is escalated or the reading needs validation"}
+                          ? `✓ Eligible — ${autoCandidateRead.toLocaleString()} kWh passes the automation rules`
+                          : "Review required — this case is escalated or the reading needs validation"}
                       </div>
                     )}
 
-                    {/* Advisory chips â€” text output only */}
+                    {/* Advisory chips — text output only */}
                     <div style={{ fontSize: 10, fontWeight: 700, color: "var(--dim)", letterSpacing: "0.05em", marginBottom: 6 }}>ASK</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
                       {[
-                        { label: "Triage queue",       query: "Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2â€“3 sentences." },
+                        { label: "Triage queue",       query: "Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences." },
                         { label: "Why overbilled?",    query: "Explain in plain English why this customer was overbilled. What did the SYS-06 algorithm get wrong for their specific account?" },
                         { label: "Escalate or close?", query: "Should I escalate this case, offer goodwill credit, or just correct and close? One clear recommendation with a single sentence of reasoning." },
                         { label: "Call prep",          query: "Give me 3 specific talking points for my live call with this customer. Base it on their wait time, what went wrong, and how I'm fixing it. Conversational, not scripted." },
@@ -1072,7 +1043,7 @@ export default function Home() {
                         background: "var(--bg)", border: "1px solid var(--border-md)", borderRadius: 8,
                         resize: "none", boxSizing: "border-box", lineHeight: 1.5,
                       }}
-                      placeholder="Or type a custom questionâ€¦"
+                      placeholder="Or type a custom question…"
                     />
 
                     {/* Buttons: Ask (advisory) and Do it for me (action) */}
@@ -1088,7 +1059,7 @@ export default function Home() {
                         }}
                       >
                         {agentRunning
-                          ? <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>âŸ³</span> Runningâ€¦</>
+                          ? <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>⟳</span> Running…</>
                           : "Ask"}
                       </button>
                       <div style={{ width: 1, height: 20, background: "var(--border)", flexShrink: 0 }} />
@@ -1106,12 +1077,12 @@ export default function Home() {
                         }}
                       >
                         {autoAllow
-                          ? (autoEligible ? "Auto-fix eligible case â†’" : "Review required")
-                          : "Do it for me â†’"}
+                          ? (autoEligible ? "Auto-fix eligible case →" : "Review required")
+                          : "Do it for me →"}
                       </button>
                     </div>
 
-                    {/* Reply output â€” strip markdown markers */}
+                    {/* Reply output — strip markdown markers */}
                     {agentReply && (
                       <div style={{
                         marginTop: 12, padding: "12px 14px",
@@ -1130,7 +1101,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* â”€â”€ STEP 3: Result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── STEP 3: Result ──────────────────────────────── */}
           {step === "result" && account && result && (
             <CalcResult
               account={account}
@@ -1188,14 +1159,14 @@ export default function Home() {
   );
 }
 
-// â”€â”€ CalcResult â€” narrated calculation terminal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── CalcResult — narrated calculation terminal ─────────────────────
 function MeterHubNote({ saved, typicalQuarterlyKwh }: { saved: MeterRead; typicalQuarterlyKwh: number }) {
   const next = nextDialEstimate(saved.read, typicalQuarterlyKwh);
   return (
     <div className="card" style={{ padding: "14px 16px" }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--hold)", marginBottom: 4 }}>Saved to MeterHub</div>
       <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.55 }}>
-        Verified read {saved.read.toLocaleString()} kWh on {formatMeterDate(saved.date)}. The next estimate is {next.toLocaleString()} kWh â€” that read plus a typical quarter of {typicalQuarterlyKwh.toLocaleString()} kWh, instead of the old SYS-06 guess.
+        Verified read {saved.read.toLocaleString()} kWh on {formatMeterDate(saved.date)}. The next estimate is {next.toLocaleString()} kWh — that read plus a typical quarter of {typicalQuarterlyKwh.toLocaleString()} kWh, instead of the old SYS-06 guess.
       </div>
     </div>
   );
@@ -1217,37 +1188,37 @@ function CalcResult({
   type CalcLine = { text: string; kind: "section" | "row" | "divider" | "total" | "success" };
   const [lines, setLines] = useState<CalcLine[]>([]);
   const [done, setDone] = useState(false);
-  const [shockwave, setShockwave] = useState(0); // 0â€“4: how many items have ticked green
+  const [shockwave, setShockwave] = useState(0); // 0–4: how many items have ticked green
   const scrollRef = useRef<HTMLDivElement>(null);
   const shockwaveRef = useRef<HTMLDivElement>(null);
 
   // Build the narrated script from real result data
   const script: CalcLine[] = [
-    { kind: "section", text: "Step 1 â€” Reading the meter" },
+    { kind: "section", text: "Step 1 — Reading the meter" },
     { kind: "row",     text: `  Previous read  (${account.previousReadDate}):   ${account.previousRead.toLocaleString()} kWh` },
     { kind: "row",     text: `  Customer's dial (verified on call):  ${parsedDial.toLocaleString()} kWh` },
-    { kind: "row",     text: `  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€` },
-    { kind: "row",     text: `  Units actually used:                 ${result.units.toLocaleString()} kWh  âœ“` },
-    { kind: "row",     text: `  Algorithm had guessed:              ${(account.estimatedRead - account.previousRead).toLocaleString()} kWh  âœ—` },
+    { kind: "row",     text: `  ─────────────────────────────────────────────` },
+    { kind: "row",     text: `  Units actually used:                 ${result.units.toLocaleString()} kWh  ✓` },
+    { kind: "row",     text: `  Algorithm had guessed:              ${(account.estimatedRead - account.previousRead).toLocaleString()} kWh  ✗` },
     { kind: "row",     text: `` },
-    { kind: "section", text: "Step 2 â€” Applying tariff " + account.tariffCode },
+    { kind: "section", text: "Step 2 — Applying tariff " + account.tariffCode },
     { kind: "row",     text: `  Standing charge (quarterly):         $${result.standingCharge.toFixed(2)}` },
     ...result.tierBreakdown.map((t) => ({
       kind: "row" as const,
-      text: `  ${t.tier.padEnd(28)} ${String(t.units).padStart(4)} kWh Ã— $${t.rate.toFixed(4)} = $${t.cost.toFixed(2)}`,
+      text: `  ${t.tier.padEnd(28)} ${String(t.units).padStart(4)} kWh × $${t.rate.toFixed(4)} = $${t.cost.toFixed(2)}`,
     })),
     { kind: "row",     text: `` },
-    { kind: "section", text: "Step 3 â€” Checking for exceptions" },
+    { kind: "section", text: "Step 3 — Checking for exceptions" },
     { kind: "row",     text: `  Tariff mismatch?             NO` },
     { kind: "row",     text: `  Reading reversal?            NO` },
     { kind: "row",     text: `  Overflow (>50k units)?       NO` },
     { kind: "row",     text: `  Return code:                 ${result.returnCode}  (VALID)` },
     { kind: "row",     text: `` },
-    { kind: "divider", text: `  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•` },
+    { kind: "divider", text: `  ══════════════════════════════════════════════` },
     { kind: "total",   text: `  CORRECTED TOTAL:            $${result.total.toFixed(2)}` },
     { kind: "total",   text: `  Execution time:             ${result.execMs}ms` },
-    { kind: "divider", text: `  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•` },
-    { kind: "success", text: `  âœ“  RC 0000. Bill corrected. ${account.name.split(" ")[0]}'s account is clear.` },
+    { kind: "divider", text: `  ══════════════════════════════════════════════` },
+    { kind: "success", text: `  ✓  RC 0000. Bill corrected. ${account.name.split(" ")[0]}'s account is clear.` },
   ];
 
   useEffect(() => {
@@ -1315,10 +1286,10 @@ function CalcResult({
             </div>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>
-                Aurora COBOL Rating Engine â€” Live Calculation
+                Aurora COBOL Rating Engine — Live Calculation
               </div>
               <div style={{ fontSize: 10, color: "var(--dim)" }}>
-                rating.cob v4.2.1 (1998) Â· running in WebAssembly Â· {result.execMs}ms
+                rating.cob v4.2.1 (1998) · running in WebAssembly · {result.execMs}ms
               </div>
             </div>
           </div>
@@ -1329,7 +1300,7 @@ function CalcResult({
               color: savings >= 0 ? "var(--green)" : "var(--amber)",
               border: `1px solid ${savings >= 0 ? "var(--green-mid)" : "var(--amber-mid)"}`,
             }}>
-              âœ“ RC: {result.returnCode}
+              ✓ RC: {result.returnCode}
             </span>
           )}
         </div>
@@ -1354,11 +1325,11 @@ function CalcResult({
               {line.text || "\u00A0"}
             </div>
           ))}
-          {!done && <span style={{ color: "#00FF41", animation: "blink 1s step-end infinite" }}>â–ˆ</span>}
+          {!done && <span style={{ color: "#00FF41", animation: "blink 1s step-end infinite" }}>█</span>}
         </div>
       </div>
 
-      {/* Bill change â€” shown once calc is done */}
+      {/* Bill change — shown once calc is done */}
       {done && (
         <div
           className="card fade-up"
@@ -1370,7 +1341,7 @@ function CalcResult({
               background: "var(--green-light)", border: "1px solid var(--green-mid)",
               color: "var(--green)", fontSize: 11, fontWeight: 800,
             }}>
-              âœ“ Auto-approved: eligible correction passed all meter-read rules
+              ✓ Auto-approved: eligible correction passed all meter-read rules
             </div>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center", flexWrap: "wrap" }}>
@@ -1383,11 +1354,11 @@ function CalcResult({
                 ${account.estimatedBill.toFixed(2)}
               </div>
               <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 4 }}>
-                {savings >= 0 ? "overestimated" : "underestimated"} â€” {(account.estimatedRead - account.previousRead).toLocaleString()} kWh guessed
+                {savings >= 0 ? "overestimated" : "underestimated"} — {(account.estimatedRead - account.previousRead).toLocaleString()} kWh guessed
               </div>
             </div>
 
-            <div style={{ fontSize: 30, color: savings >= 0 ? "var(--green-mid)" : "var(--amber-mid)" }}>â†’</div>
+            <div style={{ fontSize: 30, color: savings >= 0 ? "var(--green-mid)" : "var(--amber-mid)" }}>→</div>
 
             {/* New */}
             <div style={{ textAlign: "center" }}>
@@ -1410,15 +1381,15 @@ function CalcResult({
           }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: savings >= 0 ? "var(--green)" : "var(--amber)" }}>
               {savings >= 0
-                ? `${account.name} saves $${savings.toFixed(2)} â€” corrected on the first call.`
-                : `${account.name}'s corrected bill is $${Math.abs(savings).toFixed(2)} higher than estimated â€” reading confirmed on call.`
+                ? `${account.name} saves $${savings.toFixed(2)} — corrected on the first call.`
+                : `${account.name}'s corrected bill is $${Math.abs(savings).toFixed(2)} higher than estimated — reading confirmed on call.`
               }
             </span>
           </div>
         </div>
       )}
 
-      {/* Operational shockwave â€” 4 items tick green with 150ms stagger */}
+      {/* Operational shockwave — 4 items tick green with 150ms stagger */}
       {done && (() => {
         const items = [
           {
@@ -1429,7 +1400,7 @@ function CalcResult({
           {
             label: "28-day resolution queue",
             action: "bypassed",
-            sub: `${account.openDays} days open â€” resolved tonight's 2 AM run`,
+            sub: `${account.openDays} days open — resolved tonight's 2 AM run`,
           },
           {
             label: "Customer callback",
@@ -1439,7 +1410,7 @@ function CalcResult({
           {
             label: "First-contact resolution",
             action: "achieved",
-            sub: "Case closed on this call â€” no transfer, no ticket",
+            sub: "Case closed on this call — no transfer, no ticket",
           },
         ];
         return (
@@ -1492,7 +1463,7 @@ function CalcResult({
                         fontSize: 11, fontWeight: 500,
                         color: ticked ? "var(--green)" : "var(--dim)",
                         transition: "color 0.3s",
-                      }}>Â· {item.action}</span>
+                      }}>· {item.action}</span>
                     </div>
                     <div style={{ fontSize: 10, color: ticked ? "var(--green)" : "var(--dim)", marginTop: 1, transition: "color 0.3s" }}>
                       {item.sub}
@@ -1511,7 +1482,7 @@ function CalcResult({
           <div style={{ padding: "11px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>Aurora SYS-01 Batch File</div>
-              <div style={{ fontSize: 10, color: "var(--dim)" }}>80-column Â· ready for 2:00 AM ingest Â· rejection rate: 0.00%</div>
+              <div style={{ fontSize: 10, color: "var(--dim)" }}>80-column · ready for 2:00 AM ingest · rejection rate: 0.00%</div>
             </div>
             <button
               onClick={() => navigator.clipboard.writeText(result.batchLine)}
@@ -1532,7 +1503,7 @@ function CalcResult({
         <MeterHubNote saved={meterRead} typicalQuarterlyKwh={account.typicalQuarterlyKwh} />
       )}
 
-      {/* Under the hood â€” collapsible COBOL proof */}
+      {/* Under the hood — collapsible COBOL proof */}
       {done && (
         <UnderTheHood
           result={result}
@@ -1553,7 +1524,7 @@ function CalcResult({
               cursor: "pointer", transition: "all 0.2s", 
             }}
           >
-            {receiptSent ? `âœ“ Receipt sent to ${account.name.split(" ")[0]}` : "Send Receipt via SMS"}
+            {receiptSent ? `✓ Receipt sent to ${account.name.split(" ")[0]}` : "Send Receipt via SMS"}
           </button>
           <button
             onClick={onBack}
@@ -1565,7 +1536,7 @@ function CalcResult({
               display: "flex", alignItems: "center", gap: 6,
             }}
           >
-            â† Edit read
+            ← Edit read
           </button>
           <button
             onClick={onReset}
@@ -1581,7 +1552,7 @@ function CalcResult({
         </div>
       )}
 
-      {/* ACW â€” After-Call Work summary */}
+      {/* ACW — After-Call Work summary */}
       {done && <AcwSummary account={account} result={result} parsedDial={parsedDial} savings={savings} />}
 
       {/* Receipt */}
@@ -1592,7 +1563,7 @@ function CalcResult({
   );
 }
 
-// â”€â”€ AcwSummary â€” After-Call Work note for CaseTrack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── AcwSummary — After-Call Work note for CaseTrack ───────────────
 function AcwSummary({ account, result, parsedDial, savings }: {
   account: AccountRecord; result: CobolResult; parsedDial: number; savings: number;
 }) {
@@ -1624,7 +1595,7 @@ function AcwSummary({ account, result, parsedDial, savings }: {
       }}>
         <div>
           <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>CaseTrack ACW note</span>
-          <span style={{ fontSize: 11, color: "var(--dim)", marginLeft: 8 }}>After-call work Â· paste into CRM</span>
+          <span style={{ fontSize: 11, color: "var(--dim)", marginLeft: 8 }}>After-call work · paste into CRM</span>
         </div>
         <button
           onClick={copy}
@@ -1636,7 +1607,7 @@ function AcwSummary({ account, result, parsedDial, savings }: {
             cursor: "pointer", transition: "all 0.15s",
           }}
         >
-          {copied ? "âœ“ Copied!" : "Copy to CaseTrack"}
+          {copied ? "✓ Copied!" : "Copy to CaseTrack"}
         </button>
       </div>
       <div style={{
@@ -1653,7 +1624,7 @@ function AcwSummary({ account, result, parsedDial, savings }: {
   );
 }
 
-// â”€â”€ BillAdjustmentReceipt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── BillAdjustmentReceipt ──────────────────────────────────────────
 function BillAdjustmentReceipt({
   account, result, parsedDial, savings,
 }: {
@@ -1674,7 +1645,7 @@ function BillAdjustmentReceipt({
     { label: "Address",         value: account.address },
     { label: "Tariff",          value: account.tariffCode },
     { label: "Period end read", value: `${parsedDial.toLocaleString()} kWh (verified on call)` },
-    { label: "Previous read",   value: `${account.previousRead.toLocaleString()} kWh Â· ${account.previousReadDate}` },
+    { label: "Previous read",   value: `${account.previousRead.toLocaleString()} kWh · ${account.previousReadDate}` },
     { label: "Units consumed",  value: `${result.units.toLocaleString()} kWh` },
   ];
 
@@ -1694,7 +1665,7 @@ function BillAdjustmentReceipt({
             Bill Adjustment Confirmed
           </div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)" }}>
-            Sent via SMS Â· {issuedAt}
+            Sent via SMS · {issuedAt}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -1760,14 +1731,14 @@ function BillAdjustmentReceipt({
               }}>
                 <div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: "var(--amber, #b45309)" }}>
-                    Regulatory credit Â· Licence Cond. 14B
+                    Regulatory credit · Licence Cond. 14B
                   </span>
                   <span style={{ fontSize: 10, color: "var(--muted)", marginLeft: 8 }}>
-                    Outage compensation Â· {account.outage!.ref}
+                    Outage compensation · {account.outage!.ref}
                   </span>
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 700, color: "var(--amber, #b45309)", fontVariantNumeric: "tabular-nums" }}>
-                  âˆ’${account.outage!.compensationApplied.toFixed(2)}
+                  −${account.outage!.compensationApplied.toFixed(2)}
                 </span>
               </div>
               <div style={{
@@ -1789,7 +1760,7 @@ function BillAdjustmentReceipt({
             background: "var(--green-light)", borderTop: "1px solid var(--green-mid)",
           }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: "var(--green)" }}>
-              ${savings.toFixed(2)} reduction applied Â· your account will reflect this within 2 working days
+              ${savings.toFixed(2)} reduction applied · your account will reflect this within 2 working days
             </span>
           </div>
         )}
@@ -1802,7 +1773,7 @@ function BillAdjustmentReceipt({
         background: "var(--bg)",
       }}>
         <div style={{ fontSize: 10, color: "var(--dim)", lineHeight: 1.6 }}>
-          Northwind Energy Â· Authorised under Ofgem Licence Â· Engine: Aurora SYS-01 v4.2.1
+          Northwind Energy · Authorised under Ofgem Licence · Engine: Aurora SYS-01 v4.2.1
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           <span style={{
@@ -1823,7 +1794,7 @@ function BillAdjustmentReceipt({
   );
 }
 
-// â”€â”€ UnderTheHood â€” collapsible COBOL proof â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── UnderTheHood — collapsible COBOL proof ─────────────────────────
 function UnderTheHood({
   result, account, parsedDial,
 }: {
@@ -1839,47 +1810,47 @@ function UnderTheHood({
   const t2Units = Math.max(0, Math.min(units - 500, 1500));
   const t3Units = Math.max(0, units - 2000);
 
-  // Build annotated COBOL â€” real source with actual values substituted
+  // Build annotated COBOL — real source with actual values substituted
   const annotated = [
     { code: `       IDENTIFICATION DIVISION.`,                                  note: "" },
     { code: `       PROGRAM-ID. RATING.`,                                       note: "" },
-    { code: `      * Aurora Billing v4.2.1 â€” Tariff Rating Module`,             note: "" },
+    { code: `      * Aurora Billing v4.2.1 — Tariff Rating Module`,             note: "" },
     { code: ``,                                                                  note: "" },
     { code: `       PROCEDURE DIVISION.`,                                        note: "" },
     { code: `       MAIN-LOGIC.`,                                                note: "" },
-    { code: `           MOVE ${parsedDial} TO WS-CURRENT-READ`,                 note: `â† customer's dial: ${parsedDial.toLocaleString()}` },
-    { code: `           MOVE ${account.previousRead} TO WS-PREV-READ`,          note: `â† previous billing read` },
+    { code: `           MOVE ${parsedDial} TO WS-CURRENT-READ`,                 note: `← customer's dial: ${parsedDial.toLocaleString()}` },
+    { code: `           MOVE ${account.previousRead} TO WS-PREV-READ`,          note: `← previous billing read` },
     { code: `           SUBTRACT WS-PREV-READ FROM WS-CURRENT-READ`,           note: "" },
-    { code: `             GIVING WS-UNITS-CONSUMED`,                            note: `â†’ ${units.toLocaleString()} kWh` },
+    { code: `             GIVING WS-UNITS-CONSUMED`,                            note: `→ ${units.toLocaleString()} kWh` },
     { code: `           MOVE "${account.tariffCode}" TO WS-TARIFF-CODE`,        note: "" },
-    { code: `           MOVE 2250 TO WS-STANDING-CHG`,                         note: `â†’ $22.50 fixed` },
+    { code: `           MOVE 2250 TO WS-STANDING-CHG`,                         note: `→ $22.50 fixed` },
     { code: `           PERFORM CALC-TIER-RATING`,                              note: "" },
     { code: `           PERFORM VALIDATE-EXCEPTIONS`,                           note: "" },
     { code: `           PERFORM WRITE-BATCH-RECORD`,                            note: "" },
     { code: `           STOP RUN.`,                                              note: "" },
     { code: ``,                                                                  note: "" },
     { code: `       CALC-TIER-RATING.`,                                          note: "" },
-    { code: `           IF WS-UNITS-CONSUMED <= 500`,                           note: units <= 500 ? `â† TRUE (${units} â‰¤ 500)` : `â† FALSE (${units} > 500)` },
+    { code: `           IF WS-UNITS-CONSUMED <= 500`,                           note: units <= 500 ? `← TRUE (${units} ≤ 500)` : `← FALSE (${units} > 500)` },
     ...(units <= 500 ? [
       { code: `             COMPUTE WS-TIER1-COST =`,                           note: "" },
-      { code: `               ${units} * 0.0895`,                               note: `â†’ $${(units * 0.0895).toFixed(2)}` },
+      { code: `               ${units} * 0.0895`,                               note: `→ $${(units * 0.0895).toFixed(2)}` },
     ] : [
-      { code: `             COMPUTE WS-TIER1-COST = 500 * 0.0895`,             note: `â†’ $${(500 * 0.0895).toFixed(2)}` },
+      { code: `             COMPUTE WS-TIER1-COST = 500 * 0.0895`,             note: `→ $${(500 * 0.0895).toFixed(2)}` },
       { code: `             COMPUTE WS-TIER2-COST =`,                           note: "" },
-      { code: `               (${units} - 500) * 0.1340`,                       note: `â†’ $${(t2Units * 0.1340).toFixed(2)}` },
+      { code: `               (${units} - 500) * 0.1340`,                       note: `→ $${(t2Units * 0.1340).toFixed(2)}` },
       ...(t3Units > 0 ? [
         { code: `             COMPUTE WS-TIER3-COST =`,                         note: "" },
-        { code: `               (${units} - 2000) * 0.2480`,                   note: `â†’ $${(t3Units * 0.2480).toFixed(2)}` },
+        { code: `               (${units} - 2000) * 0.2480`,                   note: `→ $${(t3Units * 0.2480).toFixed(2)}` },
       ] : []),
     ]),
     { code: ``,                                                                  note: "" },
     { code: `       VALIDATE-EXCEPTIONS.`,                                       note: "" },
-    { code: `           IF WS-UNITS-CONSUMED < 0`,                             note: `â† FALSE (${units} â‰¥ 0)` },
+    { code: `           IF WS-UNITS-CONSUMED < 0`,                             note: `← FALSE (${units} ≥ 0)` },
     { code: `             MOVE "8001" TO WS-RETURN-CODE`,                       note: `  skipped` },
-    { code: `           ELSE IF WS-UNITS-CONSUMED > 50000`,                    note: `â† FALSE (${units} â‰¤ 50000)` },
+    { code: `           ELSE IF WS-UNITS-CONSUMED > 50000`,                    note: `← FALSE (${units} ≤ 50000)` },
     { code: `             MOVE "8002" TO WS-RETURN-CODE`,                       note: `  skipped` },
     { code: `           ELSE`,                                                   note: "" },
-    { code: `             MOVE "0000" TO WS-RETURN-CODE`,                       note: `â†’ VALID âœ“` },
+    { code: `             MOVE "0000" TO WS-RETURN-CODE`,                       note: `→ VALID ✓` },
     { code: `           END-IF.`,                                                note: "" },
   ];
 
@@ -1887,7 +1858,7 @@ function UnderTheHood({
        PROGRAM-ID. RATING.
       *========================================
       * AURORA BILLING SYSTEM v4.2.1 (1998)
-      * NORTHWIND ENERGY â€” TARIFF RATING MODULE
+      * NORTHWIND ENERGY — TARIFF RATING MODULE
       *========================================
        WORKING-STORAGE SECTION.
            05 WS-CURRENT-READ   PIC 9(8).
@@ -1942,7 +1913,7 @@ function UnderTheHood({
              DELIMITED SIZE INTO BATCH-RECORD.`;
 
   const wasmMeta = [
-    { label: "Module",          value: "rating.cob â†’ rating.wasm" },
+    { label: "Module",          value: "rating.cob → rating.wasm" },
     { label: "Compiled",        value: "GnuCOBOL 3.1.2 + Emscripten 3.1.x" },
     { label: "Runtime",         value: "WebAssembly (browser sandbox)" },
     { label: "Entrypoint",      value: "MAIN-LOGIC" },
@@ -1951,13 +1922,13 @@ function UnderTheHood({
     { label: "WS-STANDING-CHG",  value: `$${result.standingCharge.toFixed(2)}` },
     ...result.tierBreakdown.map((t) => ({
       label: t.tier,
-      value: `${t.units} kWh Ã— $${t.rate.toFixed(4)} = $${t.cost.toFixed(2)}`,
+      value: `${t.units} kWh × $${t.rate.toFixed(4)} = $${t.cost.toFixed(2)}`,
     })),
     { label: "WS-TOTAL",        value: `$${result.total.toFixed(2)}` },
     { label: "WS-RETURN-CODE",  value: `${result.returnCode} (${result.returnCode === "0000" ? "VALID" : "EXCEPTION"})` },
     { label: "Execution time",  value: `${result.execMs}ms` },
     { label: "Memory (linear)", value: "64 KB (Wasm page)" },
-    { label: "Sandbox",         value: "No file I/O Â· No network Â· No DOM access" },
+    { label: "Sandbox",         value: "No file I/O · No network · No DOM access" },
   ];
 
   const tabs: { key: typeof tab; label: string }[] = [
@@ -1989,7 +1960,7 @@ function UnderTheHood({
           </div>
         </div>
         <span style={{ fontSize: 12, color: "var(--dim)", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>
-          â–¼
+          ▼
         </span>
       </button>
 
@@ -2019,7 +1990,7 @@ function UnderTheHood({
           {tab === "annotated" && (
             <div className="cobol-screen" style={{ padding: "14px 16px", maxHeight: 360, overflowY: "auto" }}>
               <div className="cobol-head" style={{ fontSize: 10, marginBottom: 10, letterSpacing: "0.06em" }}>
-                RATING.COB â€” executed with actual values from this call
+                RATING.COB — executed with actual values from this call
               </div>
               {annotated.map((line, i) => (
                 <div key={i} style={{ display: "flex", gap: 16, lineHeight: 1.6, minHeight: "1.6em" }}>
@@ -2040,7 +2011,7 @@ function UnderTheHood({
           {tab === "source" && (
             <div className="cobol-screen" style={{ padding: "14px 16px", maxHeight: 360, overflowY: "auto" }}>
               <div className="cobol-head" style={{ fontSize: 10, marginBottom: 10, letterSpacing: "0.06em" }}>
-                rating.cob â€” original 1998 source (abridged) Â· compiled to WASM via Emscripten
+                rating.cob — original 1998 source (abridged) · compiled to WASM via Emscripten
               </div>
               <pre style={{ color: "#2a7a2a", fontSize: 11, lineHeight: 1.65, margin: 0 }}>{rawSource}</pre>
             </div>
@@ -2050,7 +2021,7 @@ function UnderTheHood({
           {tab === "wasm" && (
             <div style={{ padding: "14px 16px", background: "var(--surface)", maxHeight: 360, overflowY: "auto" }}>
               <div style={{ fontSize: 10, color: "var(--dim)", marginBottom: 12, letterSpacing: "0.05em" }}>
-                WebAssembly execution metadata â€” this call, {new Date("2023-10-24").toDateString()}
+                WebAssembly execution metadata — this call, {new Date("2023-10-24").toDateString()}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                 {wasmMeta.map((row, i) => (
@@ -2077,7 +2048,7 @@ function UnderTheHood({
   );
 }
 
-// â”€â”€ Outage alert banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Outage alert banner ────────────────────────────────────────────
 import { OutageRecord } from "@/lib/accounts";
 
 function OutageAlert({ outage, customerFirstName }: { outage: OutageRecord; customerFirstName: string }) {
@@ -2099,7 +2070,7 @@ function OutageAlert({ outage, customerFirstName }: { outage: OutageRecord; cust
             Grid incident active
           </span>
           <span style={{ fontSize: 12, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            Â· {outage.area}
+            · {outage.area}
           </span>
         </div>
         <button
@@ -2110,7 +2081,7 @@ function OutageAlert({ outage, customerFirstName }: { outage: OutageRecord; cust
             textDecoration: "underline", textDecorationColor: "var(--border-md)",
           }}
         >
-          {expanded ? "Less â–²" : "Details â–¼"}
+          {expanded ? "Less ▲" : "Details ▼"}
         </button>
       </div>
 
@@ -2154,7 +2125,7 @@ function OutageAlert({ outage, customerFirstName }: { outage: OutageRecord; cust
   );
 }
 
-// â”€â”€ Step breadcrumb â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Step breadcrumb ────────────────────────────────────────────────
 function StepDots({ step, onGoSearch, onGoAccount }: {
   step: Step;
   onGoSearch: () => void;
@@ -2169,7 +2140,7 @@ function StepDots({ step, onGoSearch, onGoAccount }: {
     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 24, fontSize: 12 }}>
       {crumbs.map((c, i) => (
         <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {i > 0 && <span style={{ color: "var(--border-md)", fontSize: 10 }}>â€º</span>}
+          {i > 0 && <span style={{ color: "var(--border-md)", fontSize: 10 }}>›</span>}
           {c.onClick ? (
             <button
               onClick={c.onClick}
@@ -2179,7 +2150,7 @@ function StepDots({ step, onGoSearch, onGoAccount }: {
                 display: "flex", alignItems: "center", gap: 4,
               }}
             >
-              {i === 0 && step !== "search" && <span style={{ fontSize: 10 }}>â†</span>}
+              {i === 0 && step !== "search" && <span style={{ fontSize: 10 }}>←</span>}
               {c.label}
             </button>
           ) : (
@@ -2191,7 +2162,7 @@ function StepDots({ step, onGoSearch, onGoAccount }: {
   );
 }
 
-// â”€â”€ BatchDrawer â€” tonight's queue + mainframe simulation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── BatchDrawer — tonight's queue + mainframe simulation ──────────
 function BatchDrawer({ queue, onClose, onSimulationComplete }: {
   queue: QueuedRecord[];
   onClose: () => void;
@@ -2212,11 +2183,11 @@ function BatchDrawer({ queue, onClose, onSimulationComplete }: {
 
     const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-    push("AURORA SYS-01 Â· BATCH INGEST INITIATED");
-    push(`JOB: NWBATCH23 Â· RUN DATE: 2023-10-25 02:00:00`);
+    push("AURORA SYS-01 · BATCH INGEST INITIATED");
+    push(`JOB: NWBATCH23 · RUN DATE: 2023-10-25 02:00:00`);
     push(`READING INPUT: SYS01.INP.DAILY (${queue.length} record${queue.length !== 1 ? "s" : ""})`);
     await delay(600);
-    push("â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€");
+    push("─────────────────────────────────────────────────────────────────────────────");
 
     let adjCount = 0; let holdCount = 0;
     for (const rec of queue) {
@@ -2225,25 +2196,25 @@ function BatchDrawer({ queue, onClose, onSimulationComplete }: {
         adjCount++;
         push(`RECORD ${rec.accountId.padEnd(12)} INGESTED`);
         await delay(180);
-        push(`  â†’ TARIFF APPLIED Â· UNITS VALIDATED Â· SUBTOTALS MATCHED`);
+        push(`  → TARIFF APPLIED · UNITS VALIDATED · SUBTOTALS MATCHED`);
         await delay(180);
-        push(`  â†’ RECONCILED OK Â· RC=0000 Â· STMT QUEUED FOR PRINT`);
+        push(`  → RECONCILED OK · RC=0000 · STMT QUEUED FOR PRINT`);
       } else {
         holdCount++;
         push(`RECORD ${rec.accountId.padEnd(12)} TYPE=HOLD`);
         await delay(180);
-        push(`  â†’ SUSPENDED FROM DISPATCH Â· PENDING VERIFIED READ`);
+        push(`  → SUSPENDED FROM DISPATCH · PENDING VERIFIED READ`);
         await delay(180);
-        push(`  â†’ HOLD ACKNOWLEDGED Â· NO BILL ISSUED TO CUSTOMER`);
+        push(`  → HOLD ACKNOWLEDGED · NO BILL ISSUED TO CUSTOMER`);
       }
     }
 
     await delay(500);
-    push("â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€");
-    push(`TOTALS: ${adjCount} ADJ Â· ${holdCount} HOLD`);
-    push(`REJECTIONS: 0 Â· EXCEPTIONS: 0`);
+    push("─────────────────────────────────────────────────────────────────────────────");
+    push(`TOTALS: ${adjCount} ADJ · ${holdCount} HOLD`);
+    push(`REJECTIONS: 0 · EXCEPTIONS: 0`);
     await delay(300);
-    push(`BATCH COMPLETE Â· SYS01.INP.DAILY ARCHIVED Â· QUEUE CLEARED`);
+    push(`BATCH COMPLETE · SYS01.INP.DAILY ARCHIVED · QUEUE CLEARED`);
     push(`NEXT RUN: 2023-10-26 02:00:00`);
     setSimRunning(false);
     setSimDone(true);
@@ -2281,10 +2252,10 @@ function BatchDrawer({ queue, onClose, onSimulationComplete }: {
               SYS01.INP.DAILY
             </span>
             <span style={{ fontSize: 11, color: "#8b949e" }}>
-              {queue.length} record{queue.length !== 1 ? "s" : ""} queued Â· 2:00 AM ingest
+              {queue.length} record{queue.length !== 1 ? "s" : ""} queued · 2:00 AM ingest
             </span>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>Ã—</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
         </div>
 
         {/* Queue list */}
@@ -2332,7 +2303,7 @@ function BatchDrawer({ queue, onClose, onSimulationComplete }: {
             {simLog.map((l, i) => (
               <div key={i} style={{ color: l.ok ? "#3fb950" : "#f85149" }}>{l.text}</div>
             ))}
-            {simRunning && <div style={{ color: "#58a6ff" }}>â–ˆ</div>}
+            {simRunning && <div style={{ color: "#58a6ff" }}>█</div>}
           </div>
         )}
 
@@ -2356,7 +2327,7 @@ function BatchDrawer({ queue, onClose, onSimulationComplete }: {
                 background: "#3fb950", color: "#010409", border: "none", cursor: "pointer",
               }}
             >
-              âœ“ Queue cleared â€” close
+              ✓ Queue cleared — close
             </button>
           ) : (
             <button
@@ -2371,8 +2342,8 @@ function BatchDrawer({ queue, onClose, onSimulationComplete }: {
               }}
             >
               {simRunning
-                ? <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>âŸ³</span> Ingestingâ€¦</>
-                : "â–¶ Simulate 2:00 AM Mainframe Ingest"}
+                ? <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>⟳</span> Ingesting…</>
+                : "▶ Simulate 2:00 AM Mainframe Ingest"}
             </button>
           )}
         </div>
@@ -2381,10 +2352,10 @@ function BatchDrawer({ queue, onClose, onSimulationComplete }: {
   );
 }
 
-// â”€â”€ Status badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Status badge ───────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
   const s: Record<string, { label: string; bg: string; color: string }> = {
-    PENDING_OVERNIGHT_BATCH: { label: "Overbilled â€” Estimate Error", bg: "var(--red-light)", color: "var(--red)" },
+    PENDING_OVERNIGHT_BATCH: { label: "Overbilled — Estimate Error", bg: "var(--red-light)", color: "var(--red)" },
     ESCALATED:               { label: "Escalated", bg: "var(--hint)", color: "var(--text)" },
     VERIFIED_CLEARED:        { label: "Cleared", bg: "var(--green-light)", color: "var(--green)" },
     CLOSED:                  { label: "Closed", bg: "var(--bg)", color: "var(--dim)" },
@@ -2401,7 +2372,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// â”€â”€ InfoTip â€” hover tooltip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── InfoTip — hover tooltip ────────────────────────────────────────
 function InfoTip({ content }: { content: React.ReactNode }) {
   const [visible, setVisible] = useState(false);
   return (
@@ -2447,7 +2418,7 @@ function InfoTip({ content }: { content: React.ReactNode }) {
   );
 }
 
-// â”€â”€ Command palette (Ctrl+K) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Command palette (Ctrl+K) ───────────────────────────────────────
 function PaletteModal({ onSelect, onClose }: { onSelect: (a: AccountRecord) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -2477,7 +2448,7 @@ function PaletteModal({ onSelect, onClose }: { onSelect: (a: AccountRecord) => v
             <line x1="9.5" y1="9.5" x2="13" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
           </svg>
           <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey}
-            placeholder="Account ID or nameâ€¦" style={{ flex: 1, border: "none", outline: "none", fontSize: 14, color: "var(--text)", background: "transparent", }} />
+            placeholder="Account ID or name…" style={{ flex: 1, border: "none", outline: "none", fontSize: 14, color: "var(--text)", background: "transparent", }} />
           <kbd style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "var(--bg)", color: "var(--dim)", border: "1px solid var(--border)" }}>ESC</kbd>
         </div>
         <div style={{ maxHeight: 320, overflowY: "auto" }}>
@@ -2502,7 +2473,7 @@ function PaletteModal({ onSelect, onClose }: { onSelect: (a: AccountRecord) => v
   );
 }
 
-// â”€â”€ Newly created open case â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Newly created open case ────────────────────────────────────────
 function IntakeCaseModal({ issue, onClose }: { issue: IntakeRecord; onClose: () => void }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -2531,9 +2502,9 @@ function IntakeCaseModal({ issue, onClose }: { issue: IntakeRecord; onClose: () 
               <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)" }}>{issue.reference}</span>
             </div>
             <div style={{ fontSize: 19, fontWeight: 700, color: "var(--text)", marginTop: 7 }}>{issue.category}</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Created from {issue.channel.toLowerCase()} intake Â· awaiting owner action</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Created from {issue.channel.toLowerCase()} intake · awaiting owner action</div>
           </div>
-          <button onClick={onClose} aria-label="Close open case" style={{ border: 0, background: "var(--hint)", color: "var(--muted)", width: 29, height: 29, borderRadius: 8, cursor: "pointer", fontSize: 17 }}>Ã—</button>
+          <button onClick={onClose} aria-label="Close open case" style={{ border: 0, background: "var(--hint)", color: "var(--muted)", width: 29, height: 29, borderRadius: 8, cursor: "pointer", fontSize: 17 }}>×</button>
         </div>
         <div style={{ padding: 20 }}>
           <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
@@ -2558,7 +2529,7 @@ function IntakeCaseModal({ issue, onClose }: { issue: IntakeRecord; onClose: () 
   );
 }
 
-// â”€â”€ Omnichannel issue intake â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Omnichannel issue intake ───────────────────────────────────────
 function IssueIntakeModal({ onClose, onAccept, onOpenAccount, onOpenIntake }: {
   onClose: () => void;
   onAccept: (record: IntakeRecord) => void;
@@ -2605,7 +2576,7 @@ function IssueIntakeModal({ onClose, onAccept, onOpenAccount, onOpenIntake }: {
 
     const linked = !!matchedAccount && !createSeparate;
     const route = linked ? "Existing case owner" : routeForIssue();
-    const status = linked ? "Repeat contact linked" : highRisk ? "Accepted Â· review required" : "Accepted Â· triaged";
+    const status = linked ? "Repeat contact linked" : highRisk ? "Accepted · review required" : "Accepted · triaged";
     const reference = linked
       ? `CNT-${matchedAccount.id}-${Date.now().toString(36).toUpperCase().slice(-4)}`
       : `NW-${Date.now().toString(36).toUpperCase().slice(-7)}`;
@@ -2663,12 +2634,12 @@ function IssueIntakeModal({ onClose, onAccept, onOpenAccount, onOpenIntake }: {
             <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Log a new issue</div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>One intake point for phone, web and email complaints.</div>
           </div>
-          <button onClick={onClose} aria-label="Close issue intake" style={{ border: 0, background: "var(--hint)", color: "var(--muted)", width: 29, height: 29, borderRadius: 8, cursor: "pointer", fontSize: 17 }}>Ã—</button>
+          <button onClick={onClose} aria-label="Close issue intake" style={{ border: 0, background: "var(--hint)", color: "var(--muted)", width: 29, height: 29, borderRadius: 8, cursor: "pointer", fontSize: 17 }}>×</button>
         </div>
 
         {accepted ? (
           <div style={{ padding: 24 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 99, background: "var(--hold-light)", color: "var(--hold)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 21, fontWeight: 800, marginBottom: 14 }}>âœ“</div>
+            <div style={{ width: 42, height: 42, borderRadius: 99, background: "var(--hold-light)", color: "var(--hold)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 21, fontWeight: 800, marginBottom: 14 }}>✓</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)" }}>{accepted.status}</div>
             <div className="mono" style={{ marginTop: 6, color: "var(--blue)", fontSize: 13, fontWeight: 700 }}>{accepted.reference}</div>
             <p style={{ marginTop: 12, color: "var(--muted)", lineHeight: 1.6 }}>{accepted.detail}</p>
@@ -2711,13 +2682,13 @@ function IssueIntakeModal({ onClose, onAccept, onOpenAccount, onOpenIntake }: {
 
             {matchedAccount && (
               <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, background: "var(--amber-light)", border: "1px solid var(--amber-mid)" }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)" }}>Potential duplicate found Â· {matchedAccount.id}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)" }}>Potential duplicate found · {matchedAccount.id}</div>
                 <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3, lineHeight: 1.5 }}>
                   {matchedAccount.name} already has an open case ({matchedAccount.openDays} days, {matchedAccount.callbackCount} prior contacts). This intake will be linked by default.
                 </div>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, fontSize: 11, color: "var(--muted)", cursor: "pointer" }}>
                   <input type="checkbox" checked={createSeparate} onChange={(e) => setCreateSeparate(e.target.checked)} />
-                  This is a separate issueâ€”create a new complaint
+                  This is a separate issue—create a new complaint
                 </label>
               </div>
             )}
