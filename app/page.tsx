@@ -6,7 +6,6 @@ import DialMeter from "@/components/DialMeter";
 import { runCobolEngine, CobolResult } from "@/lib/billing";
 import { findAccount, searchAccounts, AccountRecord } from "@/lib/accounts";
 import { UNIT_COSTS } from "@/lib/data";
-import { loadMeterReads, saveMeterRead, METERHUB_READ_DATE, MeterRead, nextDialEstimate, formatMeterDate } from "@/lib/meterhub";
 import { INBOUND_ROWS, InboundRow } from "@/lib/inbound";
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -31,7 +30,48 @@ type IntakeRecord = {
   meterRead?: string;
   linkedAccountId?: string;
   createdAt: number;
+  accountId?: string;
 };
+
+function accountFromIssue(record: IntakeRecord): AccountRecord {
+  const parsed = record.accountQuery.toUpperCase().match(/[A-Z]{3}-\d+/)?.[0];
+  const id = record.accountId || parsed || `BAR-${record.accountQuery.replace(/[^A-Za-z]/g, "").slice(0, 4).toUpperCase() || "NEW"}`;
+  const name = record.accountQuery.replace(/[A-Za-z]{3}-\d+/g, "").replace(/,/g, " ").replace(/\s+/g, " ").trim() || record.accountQuery.trim();
+  const region: AccountRecord["region"] = id.startsWith("DUN") ? "Dunmoor" : "Barrowdale";
+  const billMatch = record.summary.match(/\$\s*([\d,]+(?:\.\d{1,2})?)/);
+  const estimatedBill = billMatch ? Number(billMatch[1].replace(/,/g, "")) : 0;
+  const dial = Number(String(record.meterRead ?? "").replace(/[^\d]/g, "")) || 0;
+  const usedMatch = record.summary.match(/(?:used|estimated(?:\s+at)?|reading of)\s+([\d,]{4,})/i);
+  const estimatedFromText = usedMatch ? Number(usedMatch[1].replace(/,/g, "")) : 0;
+  const typicalQuarterlyKwh = 1800;
+  const suggestedRead = dial || (estimatedFromText > typicalQuarterlyKwh ? estimatedFromText - 2000 : 12000);
+  const estimatedRead = estimatedFromText || suggestedRead + 2000;
+  const previousRead = Math.max(suggestedRead - typicalQuarterlyKwh, 0);
+  const escalated = record.impact !== "Standard" || /solicitor|regulator|escalat/i.test(`${record.impact} ${record.summary}`);
+  return {
+    id,
+    name,
+    address: region,
+    region,
+    tariffCode: region === "Dunmoor" ? "NW-DOM-T2-WIN" : "NW-DOM-T1-STD",
+    previousRead,
+    previousReadDate: "2023-07-01",
+    estimatedRead,
+    estimatedAlgorithm: "SYS-06 v2012",
+    estimatedBill,
+    meterType: "Mechanical Dial (No AMR)",
+    callbackCount: 1,
+    status: escalated ? "ESCALATED" : "PENDING_OVERNIGHT_BATCH",
+    openDays: 1,
+    agentNotes: record.summary,
+    readingHistory: [
+      { date: "2023-07-01", read: previousRead, type: "actual" },
+      { date: "2023-10-01", read: estimatedRead, type: "estimated" },
+    ],
+    suggestedRead,
+    typicalQuarterlyKwh,
+  };
+}
 
 function isPlausibleReading(account: AccountRecord, read: number): boolean {
   const usage = read - account.previousRead;
@@ -58,18 +98,24 @@ export default function Home() {
   const [sessionDays, setSessionDays] = useState(0);
   const [heldAccounts, setHeldAccounts] = useState<Set<string>>(new Set());
   const [clearedIds, setClearedIds] = useState<Set<string>>(new Set());
-  const [meterReads, setMeterReads] = useState<Record<string, MeterRead>>({});
   const [batchQueue, setBatchQueue] = useState<QueuedRecord[]>([]);
   const [batchDrawerOpen, setBatchDrawerOpen] = useState(false);
   const [intakeOpen, setIntakeOpen] = useState(false);
-  const [intakeRecords, setIntakeRecords] = useState<IntakeRecord[]>([]);
-  const [selectedIntake, setSelectedIntake] = useState<IntakeRecord | null>(null);
-  const openIntakeCount = intakeRecords.filter((issue) => !issue.linkedAccountId).length;
+  const [loggedCases, setLoggedCases] = useState<{ account: AccountRecord; tag: string }[]>([]);
+  function addLoggedIssue(record: IntakeRecord) {
+    const account = accountFromIssue(record);
+    setLoggedCases((cases) => cases.some((row) => row.account.id === account.id) ? cases : [{ account, tag: record.category }, ...cases]);
+    return account;
+  }
   const [waiting, setWaiting] = useState<InboundRow[]>(INBOUND_ROWS);
   const [arrived, setArrived] = useState<InboundRow[]>([]);
   const [notice, setNotice] = useState("");
   const [ratedBills, setRatedBills] = useState<Record<string, { read: number; total: number }>>({});
   const [deskRunning, setDeskRunning] = useState(false);
+  const [deskTurns, setDeskTurns] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [deskDraft, setDeskDraft] = useState("");
+  const [deskChatRunning, setDeskChatRunning] = useState(false);
+  const [deskChatOpen, setDeskChatOpen] = useState(false);
   const billHeld = !!(account && heldAccounts.has(account.id));
   function placeHold(acc: { id: string; name: string }) {
     setHeldAccounts((prev) => {
@@ -100,19 +146,10 @@ export default function Home() {
     if (heldAccounts.has(account.id)) releaseHold(account.id);
     else placeHold(account);
   }
-  const [agentOpen, setAgentOpen] = useState(false);
-  const [agentVisible, setAgentVisible] = useState(false);
-  const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences.");
-  const [agentRunning, setAgentRunning] = useState(false);
-  const [agentReply, setAgentReply] = useState("");
-  const [autoAllow, setAutoAllow] = useState(true);
-  const [automationUsed, setAutomationUsed] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const dialRef = useRef<HTMLInputElement>(null);
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
-
-  useEffect(() => { setMeterReads(loadMeterReads()); }, []);
 
   useEffect(() => {
     if (step !== "search" || waiting.length === 0 || deskRunning) return;
@@ -131,10 +168,6 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  function rememberRead(accountId: string, read: number) {
-    setMeterReads(saveMeterRead({ accountId, read, date: METERHUB_READ_DATE }));
-  }
-
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); openPalette(); }
@@ -144,17 +177,30 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, [openPalette]);
 
+  function resolveAccount(q: string) {
+    const query = q.trim().toUpperCase();
+    const local = loggedCases.find((row) => row.account.id.toUpperCase() === query || row.account.name.toUpperCase().includes(query));
+    return local?.account ?? findAccount(q);
+  }
   const suggestions = query.trim()
-    ? searchAccounts(query).filter((a) => !clearedIds.has(a.id)).slice(0, 6)
+    ? (() => {
+        const q = query.trim().toUpperCase();
+        const local = loggedCases
+          .map((row) => row.account)
+          .filter((a) => !clearedIds.has(a.id) && (a.id.toUpperCase().includes(q) || a.name.toUpperCase().includes(q)));
+        return [...local, ...searchAccounts(query).filter((a) => !clearedIds.has(a.id))]
+          .filter((a, i, all) => all.findIndex((row) => row.id === a.id) === i)
+          .slice(0, 6);
+      })()
     : [];
   const showSuggest = suggestOpen && query.trim().length > 0;
 
   function handleSearch(q: string) {
     const trimmed = q.trim();
     if (!trimmed) return;
-    const a = findAccount(trimmed);
+    const a = resolveAccount(trimmed);
     if (a) {
-      setAccount(a); setStep("account"); setQuery(""); setSearchMiss(""); setSuggestOpen(false); setPaletteOpen(false); setAutomationUsed(false);
+      setAccount(a); setStep("account"); setQuery(""); setSearchMiss(""); setSuggestOpen(false); setPaletteOpen(false);
     } else {
       setSearchMiss(trimmed);
     }
@@ -168,15 +214,6 @@ export default function Home() {
   // Flag usage that far exceeds typical quarterly consumption — ceiling is 3× typical to allow for edge cases
   const dialUnrealistic  = !!(account && dialRead && !isNaN(dialParsed) && dialUsage > account.typicalQuarterlyKwh * 3);
   const dialValid = !!(account && dialRead && isPlausibleReading(account, dialParsed));
-  const autoCandidateRead = account
-    ? (dialRead ? dialParsed : account.suggestedRead)
-    : Number.NaN;
-  const autoEligible = !!(
-    autoAllow &&
-    account &&
-    account.status !== "ESCALATED" &&
-    isPlausibleReading(account, autoCandidateRead)
-  );
 
   async function rateAccount(acc: AccountRecord, read: number, quiet = false) {
     if (!quiet) setRunning(true);
@@ -197,7 +234,6 @@ export default function Home() {
     setSessionDays((p) => p + acc.openDays);
     setClearedIds((prev) => new Set(prev).add(acc.id));
     setRatedBills((prev) => ({ ...prev, [acc.id]: { read, total: res.total } }));
-    rememberRead(acc.id, read);
     releaseHold(acc.id);
     setBatchQueue((q) => [...q, {
       id: `${acc.id}-${Date.now()}`,
@@ -211,78 +247,11 @@ export default function Home() {
     if (!account || !dialRead || !dialValid) return;
     const parsed = parseInt(dialRead, 10);
     if (isNaN(parsed) || parsed <= 0) return;
-    setAutomationUsed(false);
     await rateAccount(account, parsed, false);
   }
 
-  async function handleFixWithRead(read: number, automated = false) {
-    if (!account || !isPlausibleReading(account, read)) {
-      setAgentReply("Automation stopped: the meter reading failed the deterministic plausibility checks.");
-      return;
-    }
-    setAutomationUsed(automated);
-    await rateAccount(account, read, false);
-  }
-
-  async function handleAgentRun(mode: "advisory" | "action" = "advisory", overrideMessage?: string) {
-    if (!account || agentRunning) return;
-    setAgentRunning(true);
-    setAgentReply("");
-    try {
-      const res = await fetch("/api/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: overrideMessage ?? agentQuery,
-          accountId: account.id,
-          dialRead: parseInt(dialRead, 10) || account.suggestedRead,
-          mode,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Agent failed");
-      setAgentReply(data.reply || "");
-      if (mode === "action") {
-        for (const action of (data.actions || []) as { type: string; accountId?: string; read?: number }[]) {
-          const target = action.accountId ? findAccount(action.accountId) : account;
-          if (!target) continue;
-          if (action.type === "hold") placeHold(target);
-          if (action.type === "close") setClearedIds((prev) => new Set(prev).add(target.id));
-          if (action.type === "rate" && action.read) {
-            setDialRead(String(action.read));
-            await handleFixWithRead(action.read, true);
-          }
-        }
-      }
-    } catch (err) {
-      setAgentReply(err instanceof Error ? err.message : "Agent error");
-    }
-    setAgentRunning(false);
-  }
-
-  async function handleAutoFix() {
-    if (!account || agentRunning || running) return;
-    if (!autoAllow) {
-      setAgentReply("Auto-allow is off. Use Ask for advice or enable auto-allow for eligible corrections.");
-      return;
-    }
-    if (account.status === "ESCALATED") {
-      setAgentReply("Review required: escalated cases cannot be auto-approved.");
-      return;
-    }
-    if (!isPlausibleReading(account, autoCandidateRead)) {
-      setAgentReply("Review required: enter a plausible meter reading before automation can run.");
-      return;
-    }
-
-    setAgentRunning(true);
-    setAgentReply("Eligible correction auto-approved under the meter-read rules. Running the billing calculation now.");
-    setDialRead(String(autoCandidateRead));
-    await handleFixWithRead(autoCandidateRead, true);
-    setAgentRunning(false);
-  }
-
   const allCases = [
+    ...loggedCases.map((row) => ({ id: row.account.id, name: row.account.name, bill: row.account.estimatedBill, days: row.account.openDays, tag: row.tag, region: row.account.region })),
     { id: "DUN-9021", name: "Margaret Holloway", bill: 842.10, days: 41, tag: "Threatening escalation", region: "Dunmoor" },
     { id: "DUN-3345", name: "Edith Cargill",     bill: 723.50, days: 58, tag: "Solicitor involved", region: "Dunmoor" },
     { id: "BAR-4401", name: "James Whitmore",    bill: 612.40, days: 28, tag: "", region: "Barrowdale" },
@@ -300,7 +269,7 @@ export default function Home() {
     if (deskRunning || activeCases.length === 0) return;
     setDeskRunning(true);
     for (const row of activeCases) {
-      const full = findAccount(row.id);
+      const full = resolveAccount(row.id);
       if (!full) continue;
       const escalate = full.status === "ESCALATED" || /solicitor|regulator|escalat/i.test(row.tag);
       if (escalate) placeHold(full);
@@ -310,10 +279,58 @@ export default function Home() {
     setDeskRunning(false);
   }
 
+  async function askDesk(text?: string) {
+    const content = (text ?? deskDraft).trim();
+    if (!content || deskChatRunning) return;
+    const history = [...deskTurns, { role: "user" as const, content }];
+    setDeskTurns(history);
+    setDeskDraft("");
+    setDeskChatRunning(true);
+    try {
+      const res = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "triage",
+          messages: history,
+          desk: {
+            heldIds: [...heldAccounts],
+            rated: Object.entries(ratedBills).map(([id, bill]) => ({ id, read: bill.read, total: bill.total })),
+            waitingIds: waiting.map((row) => row.id),
+            logged: loggedCases.map((row) => row.account),
+            sessionBills,
+            sessionCorrected,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Agent failed");
+      setDeskTurns((turns) => [...turns, { role: "assistant", content: data.reply || "No reply." }]);
+      const actions = (data.actions || []) as { type?: string; accountId?: string; read?: number; issue?: Omit<IntakeRecord, "createdAt"> }[];
+      if (actions.some((action) => action.type === "work_queue")) {
+        await workQueue();
+      } else {
+        for (const action of actions) {
+          if (action.type === "log_issue" && action.issue?.summary) {
+            addLoggedIssue({ ...action.issue, createdAt: Date.now() });
+            continue;
+          }
+          if (!action.accountId) continue;
+          const target = resolveAccount(action.accountId);
+          if (action.type === "hold" && target) placeHold(target);
+          if (action.type === "rate" && target && typeof action.read === "number") await rateAccount(target, action.read, true);
+          if (action.type === "select") handleSearch(action.accountId);
+        }
+      }
+    } catch (err) {
+      setDeskTurns((turns) => [...turns, { role: "assistant", content: err instanceof Error ? err.message : "Agent error" }]);
+    }
+    setDeskChatRunning(false);
+  }
+
   function reset() {
     setStep("search"); setAccount(null); setDialRead("");
     setResult(null); setReceiptSent(false); setParsedDial(0);
-    setAgentOpen(false); setAgentVisible(false); setAgentReply(""); setAgentRunning(false); setAutomationUsed(false);
   }
 
   return (
@@ -349,13 +366,6 @@ export default function Home() {
         >
           <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1 }}>+</span>
           Log new issue
-          {openIntakeCount > 0 && (
-            <span style={{
-              minWidth: 17, height: 17, padding: "0 5px", borderRadius: 99,
-              display: "inline-flex", alignItems: "center", justifyContent: "center",
-              background: "#fff", color: "var(--text)", fontSize: 9,
-            }}>{openIntakeCount}</span>
-          )}
         </button>
         <button
           onClick={() => setBatchDrawerOpen(true)}
@@ -549,22 +559,7 @@ export default function Home() {
                   </button>
                 </div>
                 <div className="card ledger">
-                  {intakeRecords.filter((issue) => !issue.linkedAccountId).map((issue) => (
-                    <button key={issue.reference} onClick={() => setSelectedIntake(issue)} className="ledger-row" type="button">
-                      <div className="ledger-row-grid" style={{ display: "grid", gridTemplateColumns: "76px minmax(0, 1fr) auto", gap: 10, alignItems: "center", width: "100%", padding: "8px 14px" }}>
-                        <span className="mono" style={{ fontSize: 10, color: "var(--blue)", overflowWrap: "anywhere" }}>{issue.reference}</span>
-                        <span style={{ minWidth: 0 }}>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", display: "block" }}>{issue.accountQuery}</span>
-                          <span style={{ fontSize: 12, color: "var(--blue)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>{issue.category}</span>
-                        </span>
-                        <span style={{ textAlign: "right" }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.04em", padding: "2px 7px", borderRadius: 6, display: "inline-block", background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)" }}>NEW · OPEN</span>
-                          <span style={{ display: "block", fontSize: 10, color: "var(--dim)", marginTop: 4, maxWidth: 120 }}>{issue.route}</span>
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                  {openCases.length === 0 && openIntakeCount === 0 ? (
+                  {openCases.length === 0 ? (
                     <div style={{ padding: "16px", fontSize: 13, color: "var(--muted)" }}>No open cases</div>
                   ) : openCases.map((a) => {
                     const rated = ratedBills[a.id];
@@ -683,10 +678,6 @@ export default function Home() {
                   </div>
                 )}
               </div>
-
-              {meterReads[account.id] && (
-                <MeterHubNote saved={meterReads[account.id]} typicalQuarterlyKwh={account.typicalQuarterlyKwh} />
-              )}
 
               {/* The fix */}
               <div className="card" style={{ padding: 20 }}>
@@ -922,181 +913,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* ── AI Agent panel ─────────────────────────── */}
-              {!agentVisible && (
-                <button
-                  onClick={() => { setAgentVisible(true); setAgentOpen(true); }}
-                  style={{
-                    background: "none", border: "none", cursor: "pointer",
-                    fontSize: 11, color: "var(--dim)", display: "flex",
-                    alignItems: "center", gap: 6, padding: "2px 0",
-                  }}
-                >
-                  <span style={{
-                    width: 16, height: 16, borderRadius: 5, background: "var(--blue-light)",
-                    border: "1px solid var(--blue-mid)", display: "inline-flex",
-                    alignItems: "center", justifyContent: "center",
-                    fontSize: 9, color: "var(--blue)", flexShrink: 0,
-                  }}>✦</span>
-                  <span style={{ textDecoration: "underline", textDecorationStyle: "dotted" }}>Show AI agent</span>
-                </button>
-              )}
-              {agentVisible && (
-              <div className="card" style={{ padding: 0, overflow: "hidden", borderColor: "var(--blue-mid)" }}>
-                <button
-                  onClick={() => setAgentOpen((v) => !v)}
-                  style={{
-                    width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "12px 16px", background: "var(--blue-light)", border: "none", cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{
-                      width: 20, height: 20, borderRadius: 6, background: "var(--blue)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 10, color: "#fff", fontWeight: 500, flexShrink: 0,
-                    }}>✦</div>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)" }}>Agent auto-fix</span>
-                    <span style={{ fontSize: 11, color: "var(--dim)" }}>— let the AI handle it</span>
-                  </div>
-                  <span style={{ fontSize: 11, color: "var(--dim)" }}>{agentOpen ? "▲" : "▼"}</span>
-                </button>
-
-                {agentOpen && (
-                  <div style={{ padding: "12px 16px 16px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
-
-                    {/* Explicit automation policy — enabled for eligible, non-escalated cases only */}
-                    <div style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-                      padding: "10px 12px", marginBottom: 12, borderRadius: 10,
-                      background: autoAllow ? "var(--green-light)" : "var(--bg)",
-                      border: `1px solid ${autoAllow ? "var(--green-mid)" : "var(--border-md)"}`,
-                    }}>
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: autoAllow ? "var(--green)" : "var(--text)" }}>
-                          Auto-allow eligible corrections
-                        </div>
-                        <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 2, lineHeight: 1.45 }}>
-                          Valid readings run automatically. Escalated or implausible cases stay review-only.
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={autoAllow}
-                        aria-label="Auto-allow eligible corrections"
-                        onClick={() => setAutoAllow((value) => !value)}
-                        style={{
-                          width: 44, height: 24, padding: 2, borderRadius: 999, flexShrink: 0,
-                          border: "none", cursor: "pointer", transition: "background 0.15s",
-                          background: autoAllow ? "var(--green)" : "var(--border-md)",
-                          display: "flex", alignItems: "center", justifyContent: autoAllow ? "flex-end" : "flex-start",
-                        }}
-                      >
-                        <span style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
-                      </button>
-                    </div>
-
-                    {autoAllow && (
-                      <div style={{
-                        fontSize: 10, fontWeight: 700, marginBottom: 10,
-                        color: autoEligible ? "var(--green)" : "var(--amber)",
-                      }}>
-                        {autoEligible
-                          ? `✓ Eligible — ${autoCandidateRead.toLocaleString()} kWh passes the automation rules`
-                          : "Review required — this case is escalated or the reading needs validation"}
-                      </div>
-                    )}
-
-                    {/* Advisory chips — text output only */}
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--dim)", letterSpacing: "0.05em", marginBottom: 6 }}>ASK</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-                      {[
-                        { label: "Triage queue",       query: "Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences." },
-                        { label: "Why overbilled?",    query: "Explain in plain English why this customer was overbilled. What did the SYS-06 algorithm get wrong for their specific account?" },
-                        { label: "Escalate or close?", query: "Should I escalate this case, offer goodwill credit, or just correct and close? One clear recommendation with a single sentence of reasoning." },
-                        { label: "Call prep",          query: "Give me 3 specific talking points for my live call with this customer. Base it on their wait time, what went wrong, and how I'm fixing it. Conversational, not scripted." },
-                      ].map((chip) => (
-                        <button
-                          key={chip.label}
-                          onClick={() => setAgentQuery(chip.query)}
-                          style={{
-                            padding: "5px 11px", fontSize: 11, fontWeight: 600,
-                            background: agentQuery === chip.query ? "var(--blue-light)" : "var(--bg)",
-                            color: agentQuery === chip.query ? "var(--blue)" : "var(--muted)",
-                            border: `1px solid ${agentQuery === chip.query ? "var(--blue-mid)" : "var(--border-md)"}`,
-                            borderRadius: 20, cursor: "pointer",
-                          }}
-                        >
-                          {chip.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Custom query */}
-                    <textarea
-                      value={agentQuery}
-                      onChange={(e) => setAgentQuery(e.target.value)}
-                      rows={2}
-                      style={{
-                        width: "100%", padding: "8px 10px", fontSize: 12, color: "var(--text)",
-                        background: "var(--bg)", border: "1px solid var(--border-md)", borderRadius: 8,
-                        resize: "none", boxSizing: "border-box", lineHeight: 1.5,
-                      }}
-                      placeholder="Or type a custom question…"
-                    />
-
-                    {/* Buttons: Ask (advisory) and Do it for me (action) */}
-                    <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-                      <button
-                        onClick={() => handleAgentRun("advisory")}
-                        disabled={agentRunning}
-                        style={{
-                          padding: "7px 16px", fontSize: 12, fontWeight: 700,
-                          background: agentRunning ? "var(--hint)" : "var(--blue)",
-                          color: "#fff", border: "none", borderRadius: 8,
-                          cursor: agentRunning ? "default" : "pointer",
-                        }}
-                      >
-                        {agentRunning
-                          ? <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>⟳</span> Running…</>
-                          : "Ask"}
-                      </button>
-                      <div style={{ width: 1, height: 20, background: "var(--border)", flexShrink: 0 }} />
-                      <button
-                        onClick={autoAllow
-                          ? handleAutoFix
-                          : () => handleAgentRun("action", "Rate the bill using the suggested dial read, then close the case.")}
-                        disabled={agentRunning || running || (autoAllow && !autoEligible)}
-                        style={{
-                          padding: "7px 14px", fontSize: 12, fontWeight: 600,
-                          background: autoAllow && autoEligible ? "var(--green)" : "none",
-                          color: autoAllow && autoEligible ? "#fff" : "var(--muted)",
-                          border: `1px solid ${autoAllow && autoEligible ? "var(--green)" : "var(--border-md)"}`, borderRadius: 8,
-                          cursor: agentRunning || running || (autoAllow && !autoEligible) ? "not-allowed" : "pointer",
-                        }}
-                      >
-                        {autoAllow
-                          ? (autoEligible ? "Auto-fix eligible case →" : "Review required")
-                          : "Do it for me →"}
-                      </button>
-                    </div>
-
-                    {/* Reply output — strip markdown markers */}
-                    {agentReply && (
-                      <div style={{
-                        marginTop: 12, padding: "12px 14px",
-                        background: "var(--blue-light)", border: "1px solid var(--blue-mid)",
-                        borderRadius: 10, fontSize: 12, color: "var(--muted)",
-                        lineHeight: 1.75, whiteSpace: "pre-wrap",
-                      }}>
-                        {agentReply.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1")}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              )}
 
             </div>
           )}
@@ -1108,8 +924,6 @@ export default function Home() {
               result={result}
               parsedDial={parsedDial}
               receiptSent={receiptSent}
-              meterRead={meterReads[account.id]}
-              automationUsed={automationUsed}
               onSendReceipt={() => setReceiptSent(true)}
               onBack={() => setStep("account")}
               onReset={reset}
@@ -1117,6 +931,73 @@ export default function Home() {
           )}
         </div>
       </main>
+
+      <div style={{ position: "fixed", right: 16, bottom: 16, zIndex: 45, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+        {deskChatOpen && (
+          <div className="card" style={{ width: "min(340px, calc(100vw - 32px))", padding: 14, display: "flex", flexDirection: "column", maxHeight: "min(70vh, 480px)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>Desk</span>
+              <button
+                type="button"
+                onClick={() => setDeskChatOpen(false)}
+                aria-label="Close desk"
+                style={{ border: "none", background: "transparent", color: "var(--muted)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 2 }}
+              >
+                ×
+              </button>
+            </div>
+            <div
+              ref={(node) => { if (node) node.scrollTop = node.scrollHeight; }}
+              style={{ display: "flex", flexDirection: "column", gap: 8, overflowY: "auto", marginBottom: 10, minHeight: 72 }}
+            >
+              {deskTurns.length === 0 ? (
+                <div style={{ fontSize: 13, lineHeight: 1.45, color: "var(--muted)" }}>
+                  Ask who to take next, or tell it to hold, rate, open, or log a case.
+                </div>
+              ) : deskTurns.map((turn, i) => (
+                <div key={i} style={{ fontSize: 13, lineHeight: 1.45, color: turn.role === "user" ? "var(--text)" : "var(--muted)" }}>
+                  <span style={{ fontWeight: 500, color: "var(--text)" }}>{turn.role === "user" ? "You" : "Desk"} · </span>
+                  {turn.content}
+                </div>
+              ))}
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); askDesk(); }} style={{ display: "flex", gap: 8 }}>
+              <input
+                value={deskDraft}
+                onChange={(e) => setDeskDraft(e.target.value)}
+                placeholder="Hold Edith, or rate James"
+                style={{
+                  flex: 1, minWidth: 0, background: "var(--bg)", border: "1px solid var(--border)",
+                  borderRadius: 8, padding: "8px 10px", fontSize: 13, color: "var(--text)",
+                }}
+              />
+              <button
+                type="submit"
+                disabled={deskChatRunning || !deskDraft.trim()}
+                style={{
+                  flexShrink: 0, border: "none", borderRadius: 8, padding: "8px 12px",
+                  fontSize: 13, fontWeight: 500, cursor: deskChatRunning || !deskDraft.trim() ? "default" : "pointer",
+                  background: deskChatRunning || !deskDraft.trim() ? "var(--border)" : "var(--blue)",
+                  color: deskChatRunning || !deskDraft.trim() ? "var(--dim)" : "#fff",
+                }}
+              >
+                {deskChatRunning ? "Looking…" : "Ask"}
+              </button>
+            </form>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setDeskChatOpen((open) => !open)}
+          style={{
+            border: "none", borderRadius: 999, padding: "10px 16px",
+            background: "var(--blue)", color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer",
+            boxShadow: "0 8px 20px -10px rgba(28,20,16,0.6)",
+          }}
+        >
+          {deskChatOpen ? "Hide desk" : "Desk"}
+        </button>
+      </div>
 
       {/* Command palette (Ctrl+K still works) */}
       {paletteOpen && (
@@ -1126,21 +1007,19 @@ export default function Home() {
       {intakeOpen && (
         <IssueIntakeModal
           onClose={() => setIntakeOpen(false)}
-          onAccept={(record) => setIntakeRecords((records) => [record, ...records])}
+          onAccept={(record) => { if (!record.linkedAccountId) addLoggedIssue(record); }}
           onOpenAccount={(matchedAccount) => {
             setAccount(matchedAccount);
             setStep("account");
             setIntakeOpen(false);
           }}
           onOpenIntake={(record) => {
-            setSelectedIntake(record);
+            const opened = addLoggedIssue(record);
+            setAccount(opened);
+            setStep("account");
             setIntakeOpen(false);
           }}
         />
-      )}
-
-      {selectedIntake && (
-        <IntakeCaseModal issue={selectedIntake} onClose={() => setSelectedIntake(null)} />
       )}
 
       {/* Batch queue drawer */}
@@ -1160,27 +1039,13 @@ export default function Home() {
 }
 
 // ── CalcResult — narrated calculation terminal ─────────────────────
-function MeterHubNote({ saved, typicalQuarterlyKwh }: { saved: MeterRead; typicalQuarterlyKwh: number }) {
-  const next = nextDialEstimate(saved.read, typicalQuarterlyKwh);
-  return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--hold)", marginBottom: 4 }}>Saved to MeterHub</div>
-      <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.55 }}>
-        Verified read {saved.read.toLocaleString()} kWh on {formatMeterDate(saved.date)}. The next estimate is {next.toLocaleString()} kWh — that read plus a typical quarter of {typicalQuarterlyKwh.toLocaleString()} kWh, instead of the old SYS-06 guess.
-      </div>
-    </div>
-  );
-}
-
 function CalcResult({
-  account, result, parsedDial, receiptSent, meterRead, automationUsed, onSendReceipt, onBack, onReset,
+  account, result, parsedDial, receiptSent, onSendReceipt, onBack, onReset,
 }: {
   account: AccountRecord;
   result: CobolResult;
   parsedDial: number;
   receiptSent: boolean;
-  meterRead?: MeterRead;
-  automationUsed: boolean;
   onSendReceipt: () => void;
   onBack: () => void;
   onReset: () => void;
@@ -1335,15 +1200,6 @@ function CalcResult({
           className="card fade-up"
           style={{ padding: 24, borderColor: savings >= 0 ? "var(--green-mid)" : "var(--amber-mid)", borderWidth: 2 }}
         >
-          {automationUsed && (
-            <div style={{
-              marginBottom: 16, padding: "8px 12px", borderRadius: 9, textAlign: "center",
-              background: "var(--green-light)", border: "1px solid var(--green-mid)",
-              color: "var(--green)", fontSize: 11, fontWeight: 800,
-            }}>
-              ✓ Auto-approved: eligible correction passed all meter-read rules
-            </div>
-          )}
           <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center", flexWrap: "wrap" }}>
             {/* Old */}
             <div style={{ textAlign: "center" }}>
@@ -1497,10 +1353,6 @@ function CalcResult({
             </div>
           </div>
         </div>
-      )}
-
-      {done && meterRead && (
-        <MeterHubNote saved={meterRead} typicalQuarterlyKwh={account.typicalQuarterlyKwh} />
       )}
 
       {/* Under the hood — collapsible COBOL proof */}
@@ -2467,62 +2319,6 @@ function PaletteModal({ onSelect, onClose }: { onSelect: (a: AccountRecord) => v
               <span style={{ fontSize: 13, fontWeight: 500, color: "var(--red)" }}>${acc.estimatedBill.toFixed(2)}</span>
             </button>
           ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Newly created open case ────────────────────────────────────────
-function IntakeCaseModal({ issue, onClose }: { issue: IntakeRecord; onClose: () => void }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const rows = [
-    ["Reference", issue.reference],
-    ["Customer / account", issue.accountQuery],
-    ["Category", issue.category],
-    ["Channel", issue.channel],
-    ["Customer impact", issue.impact],
-    ["Assigned route", issue.route],
-    ...(issue.meterRead ? [["Meter reading", `${issue.meterRead} kWh`]] : []),
-  ];
-
-  return (
-    <div role="dialog" aria-modal="true" aria-label={`Open case ${issue.reference}`} style={{ position: "fixed", inset: 0, zIndex: 65, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
-      <div style={{ position: "absolute", inset: 0, background: "rgba(28,20,16,0.55)", backdropFilter: "blur(5px)" }} />
-      <div className="card" style={{ position: "relative", width: "100%", maxWidth: 560, borderRadius: 16, overflow: "hidden", boxShadow: "0 24px 70px rgba(28,20,16,0.28)" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ padding: "17px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-start", gap: 14 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", padding: "3px 7px", borderRadius: 6, background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)" }}>OPEN</span>
-              <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)" }}>{issue.reference}</span>
-            </div>
-            <div style={{ fontSize: 19, fontWeight: 700, color: "var(--text)", marginTop: 7 }}>{issue.category}</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Created from {issue.channel.toLowerCase()} intake · awaiting owner action</div>
-          </div>
-          <button onClick={onClose} aria-label="Close open case" style={{ border: 0, background: "var(--hint)", color: "var(--muted)", width: 29, height: 29, borderRadius: 8, cursor: "pointer", fontSize: 17 }}>×</button>
-        </div>
-        <div style={{ padding: 20 }}>
-          <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
-            {rows.map(([label, value], index) => (
-              <div key={label} style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: 16, padding: "9px 12px", borderTop: index ? "1px solid var(--border)" : 0, fontSize: 12 }}>
-                <span style={{ color: "var(--dim)" }}>{label}</span>
-                <span style={{ color: "var(--text)", fontWeight: 700 }}>{value}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: "var(--dim)", marginBottom: 6 }}>CUSTOMER DESCRIPTION</div>
-            <div style={{ padding: "12px 14px", borderRadius: 9, background: "var(--hint)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 13, lineHeight: 1.6 }}>{issue.summary}</div>
-          </div>
-          <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 9, background: "var(--blue-light)", border: "1px solid var(--blue-mid)", fontSize: 11, color: "var(--muted)" }}>
-            <b style={{ color: "var(--text)" }}>Next action:</b> {issue.impact === "Standard" ? `Assigned to ${issue.route} for assessment.` : "Priority owner review required before any automated action."}
-          </div>
-          <button onClick={onClose} style={{ width: "100%", marginTop: 16, border: 0, borderRadius: 9, padding: "11px 14px", background: "var(--text)", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Back to open cases</button>
         </div>
       </div>
     </div>
