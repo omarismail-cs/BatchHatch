@@ -150,11 +150,12 @@ export default function Home() {
 
       {/* ── Navbar ──────────────────────────────────────────── */}
       <nav style={{
-        background: "#0D1117",
-        borderBottom: "1px solid #1E2530",
+        background: "var(--surface)",
+        borderBottom: "1px solid var(--border)",
         display: "flex", alignItems: "center",
         padding: "0 20px", height: 56,
         position: "sticky", top: 0, zIndex: 40,
+        boxShadow: "0 1px 3px rgba(13,17,23,0.06)",
       }}>
         {/* Logo — cropped via overflow hidden */}
         <button onClick={reset} style={{ display: "flex", alignItems: "center", flexShrink: 0, cursor: "pointer", background: "none", border: "none" }}>
@@ -183,20 +184,20 @@ export default function Home() {
         {sessionBills > 0 && (
           <div style={{
             marginLeft: 12, display: "flex", alignItems: "center", gap: 0,
-            background: "#0E1A0E", border: "1px solid #1A3A1A",
+            background: "var(--green-light)", border: "1px solid var(--green-mid)",
             borderRadius: 10, overflow: "hidden", flexShrink: 0,
           }}>
             {[
               { label: "fixed", value: String(sessionBills) },
               { label: "corrected", value: `$${sessionCorrected.toFixed(0)}` },
-              { label: "days saved", value: String(sessionDays) },
+              { label: "days open", value: String(sessionDays) },
             ].map((s, i) => (
               <div key={s.label} style={{
                 padding: "5px 12px", textAlign: "center",
-                borderLeft: i > 0 ? "1px solid #1A3A1A" : "none",
+                borderLeft: i > 0 ? "1px solid var(--green-mid)" : "none",
               }}>
-                <div style={{ fontSize: 13, fontWeight: 900, color: "#00EE38", lineHeight: 1 }}>{s.value}</div>
-                <div style={{ fontSize: 9, color: "#2a7a2a", letterSpacing: "0.04em", marginTop: 2 }}>{s.label}</div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: "var(--green)", lineHeight: 1 }}>{s.value}</div>
+                <div style={{ fontSize: 9, color: "var(--green-dark)", letterSpacing: "0.04em", marginTop: 2 }}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -204,20 +205,20 @@ export default function Home() {
 
         {/* Metrics link */}
         <a href="/metrics" style={{
-          marginLeft: 16, fontSize: 11, fontWeight: 700, color: "#94A3B8",
+          marginLeft: 16, fontSize: 11, fontWeight: 700, color: "var(--muted)",
           textDecoration: "none", padding: "4px 10px", borderRadius: 8,
-          border: "1px solid #2A3441", whiteSpace: "nowrap",
+          border: "1px solid var(--border-md)", whiteSpace: "nowrap",
         }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "#94A3B8")}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--muted)")}
         >
           Value case
         </a>
 
-        {/* Agent */}
+        {/* Agent avatar */}
         <div style={{
           marginLeft: 10, width: 34, height: 34, borderRadius: "50%",
-          background: "#6366F1", display: "flex", alignItems: "center",
+          background: "var(--blue)", display: "flex", alignItems: "center",
           justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700, flexShrink: 0,
         }}>T1</div>
       </nav>
