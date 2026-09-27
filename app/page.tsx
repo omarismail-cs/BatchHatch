@@ -26,9 +26,14 @@ export default function Home() {
   const [sessionDays, setSessionDays] = useState(0);
   const [heldAccounts, setHeldAccounts] = useState<Set<string>>(new Set());
   const billHeld = !!(account && heldAccounts.has(account.id));
-  function holdBill() {
+  function toggleHold() {
     if (!account) return;
-    setHeldAccounts((prev) => new Set([...prev, account.id]));
+    setHeldAccounts((prev) => {
+      const next = new Set(prev);
+      if (next.has(account.id)) next.delete(account.id);
+      else next.add(account.id);
+      return next;
+    });
   }
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences.");
@@ -585,8 +590,8 @@ export default function Home() {
                 {/* Hold bill — preventive action */}
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
                   <button
-                    onClick={holdBill}
-                    disabled={billHeld}
+                    onClick={toggleHold}
+                    disabled={false}
                     style={{
                       width: "100%", padding: "10px 16px", fontSize: 12, fontWeight: 700,
                       background: billHeld ? "var(--bg)" : "none",
@@ -596,7 +601,7 @@ export default function Home() {
                       display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                     }}
                   >
-                    {billHeld ? "✓ Bill held — won't dispatch tonight" : "Hold tonight's bill dispatch"}
+                    {billHeld ? "✓ Bill held — click to release" : "Hold tonight's bill dispatch"}
                   </button>
                   {!billHeld && (
                     <div style={{ fontSize: 10, color: "var(--dim)", textAlign: "center", marginTop: 5 }}>
