@@ -39,6 +39,7 @@ export default function Home() {
     });
   }
   const [agentOpen, setAgentOpen] = useState(false);
+  const [agentVisible, setAgentVisible] = useState(false);
   const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences.");
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentReply, setAgentReply] = useState("");
@@ -148,7 +149,7 @@ export default function Home() {
   function reset() {
     setStep("search"); setAccount(null); setDialRead("");
     setResult(null); setReceiptSent(false); setParsedDial(0);
-    setAgentOpen(false); setAgentReply(""); setAgentRunning(false);
+    setAgentOpen(false); setAgentVisible(false); setAgentReply(""); setAgentRunning(false);
   }
 
   return (
@@ -558,8 +559,21 @@ export default function Home() {
                     </div>
                   )}
                   {dialUnrealistic && !dialBelowPrev && !dialNegativeUsage && (
-                    <div style={{ fontSize: 11, color: "var(--red)", fontWeight: 600 }}>
-                      That implies {dialUsage.toLocaleString()} kWh — over 3× the typical quarterly usage of {account.typicalQuarterlyKwh.toLocaleString()} kWh for this account. Verify the reading; this may be a misread dial.
+                    <div style={{
+                      background: "var(--red-light, #fff1f0)", border: "1px solid var(--red-mid, #fca5a5)",
+                      borderRadius: 10, padding: "10px 12px",
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--red)", marginBottom: 4 }}>
+                        ⚠ Reading doesn&apos;t add up — do not proceed
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--red)", lineHeight: 1.6 }}>
+                        {dialUsage.toLocaleString()} kWh implied — that&apos;s{" "}
+                        <strong>{(dialUsage / account.typicalQuarterlyKwh).toFixed(1)}×</strong> this account&apos;s
+                        typical quarterly usage of {account.typicalQuarterlyKwh.toLocaleString()} kWh.
+                        A plausible reading would be under{" "}
+                        <strong>{(account.previousRead + account.typicalQuarterlyKwh * 3).toLocaleString()}</strong>.
+                        Ask the customer to re-read the dial — they may have misread a digit.
+                      </div>
                     </div>
                   )}
                   {dialValid && (
@@ -630,6 +644,25 @@ export default function Home() {
               )}
 
               {/* ── AI Agent panel ─────────────────────────── */}
+              {!agentVisible && (
+                <button
+                  onClick={() => { setAgentVisible(true); setAgentOpen(true); }}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    fontSize: 11, color: "var(--dim)", display: "flex",
+                    alignItems: "center", gap: 6, padding: "2px 0",
+                  }}
+                >
+                  <span style={{
+                    width: 16, height: 16, borderRadius: 5, background: "var(--blue-light)",
+                    border: "1px solid var(--blue-mid)", display: "inline-flex",
+                    alignItems: "center", justifyContent: "center",
+                    fontSize: 9, color: "var(--blue)", flexShrink: 0,
+                  }}>✦</span>
+                  <span style={{ textDecoration: "underline", textDecorationStyle: "dotted" }}>Show AI agent</span>
+                </button>
+              )}
+              {agentVisible && (
               <div className="card" style={{ padding: 0, overflow: "hidden", borderColor: "var(--blue-mid)" }}>
                 <button
                   onClick={() => setAgentOpen((v) => !v)}
@@ -736,6 +769,7 @@ export default function Home() {
                   </div>
                 )}
               </div>
+              )}
 
               <button onClick={reset} style={{ background: "none", border: "none", color: "var(--dim)", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
                 ← Back to search
