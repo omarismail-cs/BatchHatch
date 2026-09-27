@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link
           rel="stylesheet"
-          href="https://api.fontshare.com/v2/css?f[]=satoshi@900,700,500,400,300&display=swap"
+          href="https://api.fontshare.com/v2/css?f[]=satoshi@700,500,400&display=swap"
         />
       </head>
       <body className={`${geistMono.variable} antialiased`}>

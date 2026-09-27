@@ -86,7 +86,7 @@ export default function MetricsBar({ manualRebillsSaved, callbacksSaved, resolve
           )}
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
-            style={{ background: "#6366F1" }}
+            style={{ background: "var(--text)" }}
           >
             T1
           </div>
@@ -163,10 +163,10 @@ function Pill({
   tip?: string;
 }) {
   const colors = {
-    red:   { bg: "var(--red-light)",   border: "var(--red-mid)",   text: "var(--red)",   dot: "#DC2626" },
-    amber: { bg: "var(--amber-light)", border: "var(--amber-mid)", text: "var(--amber)", dot: "#D97706" },
-    green: { bg: "var(--green-light)", border: "var(--green-mid)", text: "var(--green)", dot: "#16A34A" },
-    blue:  { bg: "var(--blue-light)",  border: "var(--blue-mid)",  text: "var(--blue)",  dot: "#2563EB" },
+    red:   { bg: "var(--hint)", border: "var(--border)", text: "var(--text)",  dot: "var(--text)" },
+    amber: { bg: "var(--hint)", border: "var(--border)", text: "var(--muted)", dot: "var(--muted)" },
+    green: { bg: "var(--hint)", border: "var(--border)", text: "var(--text)",  dot: "var(--text)" },
+    blue:  { bg: "var(--hint)", border: "var(--border)", text: "var(--text)",  dot: "var(--text)" },
   };
   const c = colors[variant];
 

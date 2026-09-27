@@ -1,32 +1,39 @@
 @import "tailwindcss";
 
 :root {
-  --bg:          #F4F6FA;
-  --surface:     #FFFFFF;
-  --border:      #E4E8F0;
-  --border-md:   #CDD3E0;
-  --text:        #0D1117;
-  --muted:       #4A5568;
-  --dim:         #8896A8;
-  --hint:        #C8D0DC;
+  --bg:          #f7f4ef;
+  --surface:     #ffffff;
+  --border:      #eadfd4;
+  --border-md:   #e0d0c2;
+  --text:        #1c1410;
+  --muted:       #6b574c;
+  --dim:         #8c7366;
+  --hint:        #f3ebe3;
 
-  --blue:        #2462E8;
-  --blue-dark:   #1A4EC4;
-  --blue-light:  #EEF3FD;
-  --blue-mid:    #93C5FD;
+  /* One hue: the logo orange. Names stay so buttons, bills, and charts share it. */
+  --blue:        #e85d04;
+  --blue-dark:   #c2410c;
+  --blue-light:  #fff1e6;
+  --blue-mid:    #f3c7a6;
 
-  --red:         #E02424;
-  --red-light:   #FEF1F1;
-  --red-mid:     #FBBEBE;
+  --red:         #c2410c;
+  --red-light:   #fff1e6;
+  --red-mid:     #f3c7a6;
 
-  --green:       #0E9B52;
-  --green-dark:  #0A7A40;
-  --green-light: #EDFBF3;
-  --green-mid:   #A7EFC5;
+  --green:       #9a3412;
+  --green-dark:  #7c2d12;
+  --green-light: #fff1e6;
+  --green-mid:   #f3c7a6;
 
-  --amber:       #D97706;
-  --amber-light: #FFFBEB;
-  --amber-mid:   #FDE68A;
+  --amber:       #c2410c;
+  --amber-light: #fff1e6;
+  --amber-mid:   #f3c7a6;
+
+  /* Bill hold only. The rest of the screen stays on the orange. */
+  --hold:        #0E9B52;
+  --hold-dark:   #0A7A40;
+  --hold-light:  #EDFBF3;
+  --hold-mid:    #A7EFC5;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -35,21 +42,49 @@
 input, button, select, textarea { font-family: inherit; }
 
 body {
-  background: var(--bg);
+  /* Light well is a little wider than the 580px column. Orange only covers the top of the first screen. */
+  background-color: #e4cfc0;
+  background-image:
+    radial-gradient(640px 220px at 50% 0, rgba(232, 93, 4, 0.3), transparent 72%),
+    radial-gradient(760px 140vh at 50% 18%, #fbf7f2 0%, #f6ece4 48%, transparent 72%);
+  background-attachment: fixed;
   color: var(--text);
-  /* Satoshi for all UI chrome; mono only for code/data */
-  font-family: "Satoshi", ui-sans-serif, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  font-family: "Satoshi", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 14px;
-  line-height: 1.6;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
+  caret-color: var(--blue);
 }
+
+::selection { background: var(--blue-mid); color: var(--text); }
 
 /* Monospace — COBOL output, batch strings, tabular numbers */
 .mono {
   font-family: var(--font-mono), "GeistMono", "Geist Mono", ui-monospace,
     "Cascadia Code", "Fira Mono", "Courier New", monospace;
 }
+
+/* Ledger — one card, ruled rows */
+.ledger { padding: 0; overflow: hidden; }
+.ledger-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  padding: 13px 16px;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.ledger-row:first-child { border-top: 0; }
+.ledger-row:hover { background: var(--hint); }
+.ledger-row:focus-visible { outline-offset: -2px; }
 
 /* Number inputs without spinners */
 input[type="number"]::-webkit-inner-spin-button,
@@ -59,14 +94,45 @@ input[type="number"] { -moz-appearance: textfield; }
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--hint); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--border-md); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--blue-mid); }
 
 /* Card utility */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 1px 4px rgba(13,17,23,0.06), 0 1px 2px rgba(13,17,23,0.04);
+  border-radius: 10px;
+  box-shadow: 0 1px 0 rgba(28, 20, 16, 0.03), 0 8px 24px -16px rgba(28, 20, 16, 0.18);
+}
+
+.segment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  background: var(--hint);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.segment button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  padding: 7px 11px;
+  font: 500 13px/1.2 inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+.segment button:hover { color: var(--text); }
+.segment button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border);
+}
+button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 /* COBOL terminal screen — stays mono, the one deliberately dark moment */
@@ -94,7 +160,7 @@ input[type="number"] { -moz-appearance: textfield; }
   from { opacity: 0; transform: scale(0.92); }
   to   { opacity: 1; transform: scale(1); }
 }
-.num-tick { animation: numTick 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+.num-tick { animation: numTick 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
 /* Terminal cursor blink */
 @keyframes blink {
