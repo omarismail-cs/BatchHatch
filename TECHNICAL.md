@@ -245,6 +245,8 @@ The navbar tracks three counters across all bills fixed in the session:
 
 **Hold state in a `Set<string>`.** `heldAccounts` never clears on `reset()`, so accounts stay held when navigating back to search. The HELD badge persists. In production this would write to a hold queue in SYS-01.
 
+**Cleared accounts sink to the bottom greyed out.** `clearedIds` is a `Set<string>` that accumulates account IDs whenever a bill is fixed. The open-case ledger sorts active cases first, cleared cases last. Cleared rows render at 38% opacity with the name struck through, sub-label replaced with "corrected", days replaced with "✓ fixed", and `pointer-events: none` so they can't be clicked. The fade-out is a 0.4s opacity transition. Search suggestions still filter cleared accounts out so they don't re-appear via autocomplete.
+
 **Validation ceiling is per-account.** A single global kWh cap would block legitimate high-usage accounts or allow implausible reads on low-usage ones. Each account carries `typicalQuarterlyKwh`; the ceiling is 3×. DUN-9021 (pensioner, 2-bed semi): 5,400 kWh ceiling. BAR-4401 (3-bed detached): 10,500 kWh.
 
 **Regulatory credit is a separate line item in the receipt.** The COBOL engine calculates the tariff-correct total — that is the corrected bill. The Licence Condition 14B credit is a distinct regulatory obligation. Showing them as separate lines (corrected bill → credit deduction → net amount due) makes the receipt auditable and matches how Northwind's billing system would actually represent it.
