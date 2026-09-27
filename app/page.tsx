@@ -6,7 +6,6 @@ import DialMeter from "@/components/DialMeter";
 import { runCobolEngine, CobolResult } from "@/lib/billing";
 import { findAccount, searchAccounts, AccountRecord } from "@/lib/accounts";
 import { UNIT_COSTS } from "@/lib/data";
-import { loadMeterReads, saveMeterRead, METERHUB_READ_DATE, MeterRead, nextDialEstimate, formatMeterDate } from "@/lib/meterhub";
 import { INBOUND_ROWS, InboundRow } from "@/lib/inbound";
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -58,7 +57,6 @@ export default function Home() {
   const [sessionDays, setSessionDays] = useState(0);
   const [heldAccounts, setHeldAccounts] = useState<Set<string>>(new Set());
   const [clearedIds, setClearedIds] = useState<Set<string>>(new Set());
-  const [meterReads, setMeterReads] = useState<Record<string, MeterRead>>({});
   const [batchQueue, setBatchQueue] = useState<QueuedRecord[]>([]);
   const [batchDrawerOpen, setBatchDrawerOpen] = useState(false);
   const [intakeOpen, setIntakeOpen] = useState(false);
@@ -112,7 +110,6 @@ export default function Home() {
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
 
-  useEffect(() => { setMeterReads(loadMeterReads()); }, []);
 
   useEffect(() => {
     if (step !== "search" || waiting.length === 0 || deskRunning) return;
@@ -130,10 +127,6 @@ export default function Home() {
     const timer = window.setTimeout(() => setNotice(""), 5000);
     return () => window.clearTimeout(timer);
   }, [notice]);
-
-  function rememberRead(accountId: string, read: number) {
-    setMeterReads(saveMeterRead({ accountId, read, date: METERHUB_READ_DATE }));
-  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -197,7 +190,6 @@ export default function Home() {
     setSessionDays((p) => p + acc.openDays);
     setClearedIds((prev) => new Set(prev).add(acc.id));
     setRatedBills((prev) => ({ ...prev, [acc.id]: { read, total: res.total } }));
-    rememberRead(acc.id, read);
     releaseHold(acc.id);
     setBatchQueue((q) => [...q, {
       id: `${acc.id}-${Date.now()}`,
@@ -384,8 +376,8 @@ export default function Home() {
       </nav>
 
       {/* ── Main ────────────────────────────────────────────── */}
-      <main style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 16px 60px" }}>
-        <div style={{ width: "100%", maxWidth: 580 }}>
+      <main style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 24px 60px" }}>
+        <div style={{ width: "100%", maxWidth: 960 }}>
 
           {/* Step indicator / breadcrumb */}
           <StepDots
@@ -683,10 +675,6 @@ export default function Home() {
                   </div>
                 )}
               </div>
-
-              {meterReads[account.id] && (
-                <MeterHubNote saved={meterReads[account.id]} typicalQuarterlyKwh={account.typicalQuarterlyKwh} />
-              )}
 
               {/* The fix */}
               <div className="card" style={{ padding: 20 }}>
@@ -1108,7 +1096,6 @@ export default function Home() {
               result={result}
               parsedDial={parsedDial}
               receiptSent={receiptSent}
-              meterRead={meterReads[account.id]}
               automationUsed={automationUsed}
               onSendReceipt={() => setReceiptSent(true)}
               onBack={() => setStep("account")}
@@ -1160,26 +1147,13 @@ export default function Home() {
 }
 
 // ── CalcResult — narrated calculation terminal ─────────────────────
-function MeterHubNote({ saved, typicalQuarterlyKwh }: { saved: MeterRead; typicalQuarterlyKwh: number }) {
-  const next = nextDialEstimate(saved.read, typicalQuarterlyKwh);
-  return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--hold)", marginBottom: 4 }}>Saved to MeterHub</div>
-      <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.55 }}>
-        Verified read {saved.read.toLocaleString()} kWh on {formatMeterDate(saved.date)}. The next estimate is {next.toLocaleString()} kWh — that read plus a typical quarter of {typicalQuarterlyKwh.toLocaleString()} kWh, instead of the old SYS-06 guess.
-      </div>
-    </div>
-  );
-}
-
 function CalcResult({
-  account, result, parsedDial, receiptSent, meterRead, automationUsed, onSendReceipt, onBack, onReset,
+  account, result, parsedDial, receiptSent, automationUsed, onSendReceipt, onBack, onReset,
 }: {
   account: AccountRecord;
   result: CobolResult;
   parsedDial: number;
   receiptSent: boolean;
-  meterRead?: MeterRead;
   automationUsed: boolean;
   onSendReceipt: () => void;
   onBack: () => void;
@@ -1497,10 +1471,6 @@ function CalcResult({
             </div>
           </div>
         </div>
-      )}
-
-      {done && meterRead && (
-        <MeterHubNote saved={meterRead} typicalQuarterlyKwh={account.typicalQuarterlyKwh} />
       )}
 
       {/* Under the hood — collapsible COBOL proof */}
