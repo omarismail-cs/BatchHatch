@@ -873,7 +873,9 @@ function CalcResult({
           {done && (
             <span style={{
               fontSize: 11, fontWeight: 700, borderRadius: 100, padding: "4px 12px",
-              background: "var(--green-light)", color: "var(--green)", border: "1px solid var(--green-mid)",
+              background: savings >= 0 ? "var(--green-light)" : "var(--amber-light)",
+              color: savings >= 0 ? "var(--green)" : "var(--amber)",
+              border: `1px solid ${savings >= 0 ? "var(--green-mid)" : "var(--amber-mid)"}`,
             }}>
               ✓ RC: {result.returnCode}
             </span>
@@ -914,17 +916,17 @@ function CalcResult({
             {/* Old */}
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 11, color: "var(--dim)", marginBottom: 6 }}>
-                Overcharged bill
+                {savings >= 0 ? "Estimated bill" : "Estimated bill"}
               </div>
-              <div className="figure" style={{ fontSize: 34, color: "var(--dim)", textDecoration: "line-through", textDecorationColor: "var(--blue)" }}>
+              <div className="figure" style={{ fontSize: 34, color: "var(--dim)", textDecoration: "line-through", textDecorationColor: savings >= 0 ? "var(--blue)" : "var(--amber)" }}>
                 ${account.estimatedBill.toFixed(2)}
               </div>
               <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 4 }}>
-                based on {(account.estimatedRead - account.previousRead).toLocaleString()} kWh (wrong)
+                {savings >= 0 ? "overestimated" : "underestimated"} — {(account.estimatedRead - account.previousRead).toLocaleString()} kWh guessed
               </div>
             </div>
 
-            <div style={{ fontSize: 30, color: "var(--green-mid)" }}>→</div>
+            <div style={{ fontSize: 30, color: savings >= 0 ? "var(--green-mid)" : "var(--amber-mid)" }}>→</div>
 
             {/* New */}
             <div style={{ textAlign: "center" }}>
