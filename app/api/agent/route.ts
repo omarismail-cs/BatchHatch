@@ -221,7 +221,7 @@ Current account on screen:
       res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "gemini-2.5-flash-lite", temperature: 0.3, messages, tools: activeTools }),
+        body: JSON.stringify({ model: "gemini-3.5-flash-lite", temperature: 0.3, messages, tools: activeTools }),
       });
       if (res.status !== 429) break;
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
