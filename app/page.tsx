@@ -889,7 +889,9 @@ function CalcResult({
   type CalcLine = { text: string; kind: "section" | "row" | "divider" | "total" | "success" };
   const [lines, setLines] = useState<CalcLine[]>([]);
   const [done, setDone] = useState(false);
+  const [shockwave, setShockwave] = useState(0); // 0–4: how many items have ticked green
   const scrollRef = useRef<HTMLDivElement>(null);
+  const shockwaveRef = useRef<HTMLDivElement>(null);
 
   // Build the narrated script from real result data
   const script: CalcLine[] = [
@@ -939,6 +941,22 @@ function CalcResult({
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [lines]);
+
+  // Stagger the 4 operational shockwave items 150ms apart once done
+  // Also scroll the shockwave card into view so it's visible immediately
+  useEffect(() => {
+    if (!done) return;
+    setTimeout(() => {
+      shockwaveRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 500);
+    let count = 0;
+    const iv = setInterval(() => {
+      count++;
+      setShockwave(count);
+      if (count >= 4) clearInterval(iv);
+    }, 500);
+    return () => clearInterval(iv);
+  }, [done]);
 
   const savings = account.estimatedBill - result.total;
 
@@ -1062,6 +1080,93 @@ function CalcResult({
           </div>
         </div>
       )}
+
+      {/* Operational shockwave — 4 items tick green with 150ms stagger */}
+      {done && (() => {
+        const items = [
+          {
+            label: "Back-office correction",
+            action: "cancelled",
+            sub: `$${UNIT_COSTS.manualBillCorrection.toFixed(0)} correction cost eliminated`,
+          },
+          {
+            label: "28-day resolution queue",
+            action: "bypassed",
+            sub: `${account.openDays} days open — resolved tonight's 2 AM run`,
+          },
+          {
+            label: "Customer callback",
+            action: "prevented",
+            sub: `$${UNIT_COSTS.inboundCall.toFixed(2)} inbound call cost saved`,
+          },
+          {
+            label: "First-contact resolution",
+            action: "achieved",
+            sub: "Case closed on this call — no transfer, no ticket",
+          },
+        ];
+        return (
+          <div ref={shockwaveRef} style={{
+            border: "1px solid var(--border)", borderRadius: 12,
+            overflow: "hidden", background: "var(--surface)",
+          }}>
+            <div style={{
+              padding: "10px 16px", borderBottom: "1px solid var(--border)",
+              fontSize: 10, fontWeight: 700, color: "var(--dim)", letterSpacing: "0.06em",
+            }}>
+              WHAT THAT CLICK JUST STOPPED
+            </div>
+            {items.map((item, i) => {
+              const ticked = shockwave > i;
+              return (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "11px 16px",
+                  borderBottom: i < items.length - 1 ? "1px solid var(--border)" : "none",
+                  transition: "background 0.3s",
+                  background: ticked ? "var(--green-light)" : "var(--surface)",
+                }}>
+                  {/* Check circle */}
+                  <div style={{
+                    width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: ticked ? "var(--green)" : "var(--bg)",
+                    border: `1.5px solid ${ticked ? "var(--green)" : "var(--border-md)"}`,
+                    transition: "all 0.25s",
+                  }}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <path
+                        d="M2 5l2.5 2.5L8 3"
+                        stroke={ticked ? "#fff" : "transparent"}
+                        strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                        style={{ transition: "stroke 0.2s" }}
+                      />
+                    </svg>
+                  </div>
+                  {/* Text */}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, display: "flex", alignItems: "baseline", gap: 6 }}>
+                      <span style={{
+                        fontWeight: 700,
+                        color: ticked ? "var(--green)" : "var(--dim)",
+                        transition: "color 0.3s",
+                      }}>{item.label}</span>
+                      <span style={{
+                        fontSize: 11, fontWeight: 500,
+                        color: ticked ? "var(--green)" : "var(--dim)",
+                        transition: "color 0.3s",
+                      }}>· {item.action}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: ticked ? "var(--green)" : "var(--dim)", marginTop: 1, transition: "color 0.3s" }}>
+                      {item.sub}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Batch line */}
       {done && (
