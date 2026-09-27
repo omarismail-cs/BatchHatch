@@ -335,10 +335,13 @@ export default function Home() {
                       </span>
                       <span style={{ textAlign: "right" }}>
                         {heldAccounts.has(a.id) ? (
-                          <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text)", display: "block" }}>Held</span>
-                        ) : (
-                          <span className="figure" style={{ fontSize: 22, color: "var(--text)", display: "block", lineHeight: 1 }}>${a.bill.toFixed(2)}</span>
-                        )}
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, letterSpacing: "0.04em",
+                            padding: "2px 7px", borderRadius: 6, display: "inline-block", marginBottom: 4,
+                            background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)",
+                          }}>HELD</span>
+                        ) : null}
+                        <span className="figure" style={{ fontSize: 22, color: "var(--text)", display: "block", lineHeight: 1 }}>${a.bill.toFixed(2)}</span>
                         <span style={{ fontSize: 12, color: "var(--dim)" }}>{a.days} days</span>
                       </span>
                     </button>
@@ -599,9 +602,9 @@ export default function Home() {
                     onClick={toggleHold}
                     style={{
                       width: "100%", padding: "10px 16px", fontSize: 13, fontWeight: 500,
-                      background: billHeld ? "var(--hint)" : "transparent",
-                      color: "var(--text)",
-                      border: "1px solid var(--border-md)",
+                      background: billHeld ? "var(--hold-light)" : "transparent",
+                      color: billHeld ? "var(--hold)" : "var(--text)",
+                      border: `1px solid ${billHeld ? "var(--hold-mid)" : "var(--border-md)"}`,
                       borderRadius: 10, cursor: "pointer",
                     }}
                   >
@@ -616,11 +619,11 @@ export default function Home() {
               </div>
 
               {billHeld && (
-                <div className="card fade-up" style={{ padding: "16px 20px" }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", marginBottom: 4 }}>
+                <div className="card fade-up" style={{ padding: "16px 20px", background: "var(--hold-light)", borderColor: "var(--hold-mid)" }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--hold-dark)", marginBottom: 4 }}>
                     Bill held — ${account.estimatedBill.toFixed(2)} will not dispatch tonight
                   </div>
-                  <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.55 }}>
+                  <div style={{ fontSize: 13, color: "var(--hold-dark)", lineHeight: 1.55 }}>
                     The 2am SYS-01 batch job will skip this account. {account.name.split(" ")[0]} won&apos;t receive the estimated bill while you get a verified dial read. Case stays open.
                   </div>
                 </div>
