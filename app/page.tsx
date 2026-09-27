@@ -388,7 +388,7 @@ export default function Home() {
 
           {/* ── STEP 1: Search ──────────────────────────────── */}
           {step === "search" && (
-            <div className="fade-up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "start" }}>
+            <div className="fade-up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "start" }}>
 
               {/* ── LEFT: headline + search ─── */}
               <div>
@@ -581,34 +581,19 @@ export default function Home() {
                         pointerEvents: cleared ? "none" : "auto",
                       }}
                     >
-                      <div
-                        className="ledger-row-grid"
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "76px minmax(0, 1fr) auto",
-                          gap: 10,
-                          alignItems: "center",
-                          width: "100%",
-                          padding: "8px 14px",
-                        }}
-                      >
-                        <span className="mono" style={{ fontSize: 11, color: "var(--dim)" }}>{a.id}</span>
-                        <span style={{ minWidth: 0, lineHeight: 1.25 }}>
-                          <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", display: "block" }}>{a.name}</span>
-                          <span style={{ fontSize: 12, color: a.tag && !cleared ? "var(--blue)" : "var(--dim)" }}>
-                            {cleared ? `${rated.read.toLocaleString()} kWh` : (a.tag || a.region)}
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", width: "100%" }}>
+                        <span style={{ flex: 1, minWidth: 0, lineHeight: 1.3 }}>
+                          <span style={{ fontSize: 14, fontWeight: 500, color: cleared ? "var(--dim)" : "var(--text)", display: "block", textDecoration: cleared ? "line-through" : "none" }}>{a.name}</span>
+                          <span style={{ fontSize: 12, color: "var(--dim)" }}>
+                            {cleared ? "corrected" : (a.tag || a.region)}
                           </span>
                         </span>
-                        <span style={{ textAlign: "right", lineHeight: 1.25 }}>
-                          {heldAccounts.has(a.id) && !cleared ? (
-                            <span style={{
-                              fontSize: 10, fontWeight: 700, letterSpacing: "0.04em",
-                              padding: "1px 6px", borderRadius: 6, display: "inline-block", marginBottom: 2,
-                              background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)",
-                            }}>HELD</span>
-                          ) : null}
+                        {heldAccounts.has(a.id) && !cleared && (
+                          <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 7px", borderRadius: 6, background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)", whiteSpace: "nowrap" }}>held</span>
+                        )}
+                        <span style={{ textAlign: "right", lineHeight: 1.3, flexShrink: 0 }}>
                           <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text)", display: "block", fontVariantNumeric: "tabular-nums" }}>${(rated ? rated.total : a.bill).toFixed(2)}</span>
-                          <span style={{ fontSize: 11, color: "var(--dim)" }}>{cleared ? "rated" : `${a.days} days`}</span>
+                          <span style={{ fontSize: 11, color: "var(--dim)" }}>{cleared ? "fixed" : `${a.days}d`}</span>
                         </span>
                       </div>
                     </button>
@@ -623,10 +608,10 @@ export default function Home() {
 
           {/* ── STEP 2: Account loaded ──────────────────────── */}
           {step === "account" && account && (
-            <div className="fade-up" style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: 20, alignItems: "start" }}>
+            <div className="fade-up" style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: 24, alignItems: "start" }}>
 
               {/* ── LEFT: who + what they owe ─── */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
               {/* Outage alert — only when account is in an active incident zone */}
               {account.outage && (
@@ -637,7 +622,7 @@ export default function Home() {
               )}
 
               {/* The angry customer card */}
-              <div className="card" style={{ padding: 20, borderColor: "var(--red-mid)", borderWidth: 1.5 }}>
+              <div className="card" style={{ padding: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                   <div>
                     <div style={{ fontSize: 10, color: "var(--dim)", marginBottom: 4, letterSpacing: "0.05em" }}>
@@ -653,19 +638,19 @@ export default function Home() {
                 <div style={{
                   display: "grid", gridTemplateColumns: "1fr auto 1fr",
                   gap: 12, alignItems: "center",
-                  background: "var(--red-light)", borderRadius: 12,
-                  padding: "16px 20px", border: "1px solid var(--red-mid)",
+                  background: "var(--hint)", borderRadius: 10,
+                  padding: "16px 20px", border: "1px solid var(--border)",
                 }}>
                   <div>
                     <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Disputed bill amount</div>
-                    <div className="figure" style={{ fontSize: 36, color: "var(--red)", lineHeight: 1 }}>
+                    <div className="figure" style={{ fontSize: 36, color: "var(--text)", lineHeight: 1 }}>
                       ${account.estimatedBill.toFixed(2)}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
                       SYS-06 guessed {account.estimatedRead.toLocaleString()} kWh
                     </div>
                   </div>
-                  <div style={{ fontSize: 20, color: "var(--red-mid)" }}>→</div>
+                  <div style={{ fontSize: 20, color: "var(--border-md)" }}>→</div>
                   <div>
                     <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Meter last read</div>
                     <div className="figure" style={{ fontSize: 26, color: "var(--text)", lineHeight: 1.1 }}>
@@ -691,13 +676,10 @@ export default function Home() {
               </div>{/* end LEFT col */}
 
               {/* ── RIGHT: read + fix + AI ─── */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
               {/* The fix */}
               <div className="card" style={{ padding: 20 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>
-                  Customer Dial Read
-                </div>
 
                 {/* Previous read anchor — context for the agent on the call */}
                 {(() => {
@@ -718,7 +700,7 @@ export default function Home() {
                     }}>
                       {/* Col 1 — Last verified read */}
                       <div style={{ padding: "10px 12px", borderRadius: "10px 0 0 10px" }}>
-                        <div style={{ fontSize: 9, color: "var(--dim)", fontWeight: 700, letterSpacing: "0.05em", marginBottom: 4 }}>LAST VERIFIED READ</div>
+                        <div style={{ fontSize: 10, color: "var(--dim)", marginBottom: 4 }}>Last verified read</div>
                         <div style={{ fontSize: 15, fontWeight: 500, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>
                           {account.previousRead.toLocaleString()} kWh
                         </div>
@@ -731,7 +713,7 @@ export default function Home() {
                       {/* Col 2 — Days unread */}
                       <div style={{ padding: "10px 12px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-                          <div style={{ fontSize: 9, color: "var(--dim)", fontWeight: 700, letterSpacing: "0.05em" }}>DAYS UNREAD</div>
+                          <div style={{ fontSize: 10, color: "var(--dim)" }}>Days unread</div>
                           <InfoTip content={
                             <>
                               <strong style={{ color: "#fff" }}>Why this matters</strong><br /><br />
@@ -754,7 +736,7 @@ export default function Home() {
                       {/* Col 3 — System guessed */}
                       <div style={{ padding: "10px 12px", borderRadius: "0 10px 10px 0" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-                          <div style={{ fontSize: 9, color: "var(--dim)", fontWeight: 700, letterSpacing: "0.05em" }}>SYSTEM GUESSED</div>
+                          <div style={{ fontSize: 10, color: "var(--dim)" }}>System guessed</div>
                           <InfoTip content={
                             <>
                               <strong style={{ color: "#fff" }}>How SYS-06 built this estimate</strong><br /><br />
@@ -917,12 +899,9 @@ export default function Home() {
               </div>
 
               {billHeld && (
-                <div className="card fade-up" style={{ padding: "16px 20px", background: "var(--hold-light)", borderColor: "var(--hold-mid)" }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--hold-dark)", marginBottom: 4 }}>
-                    Bill held — ${account.estimatedBill.toFixed(2)} will not dispatch tonight
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--hold-dark)", lineHeight: 1.55 }}>
-                    The 2am SYS-01 batch job will skip this account. {account.name.split(" ")[0]} won&apos;t receive the estimated bill while you get a verified dial read. Case stays open.
+                <div className="fade-up" style={{ padding: "12px 16px", borderRadius: 10, background: "var(--hold-light)", border: "1px solid var(--hold-mid)" }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--hold-dark)" }}>
+                    Held — ${account.estimatedBill.toFixed(2)} will not dispatch tonight. {account.name.split(" ")[0]}&apos;s case stays open until a verified read is arranged.
                   </div>
                 </div>
               )}
@@ -947,7 +926,7 @@ export default function Home() {
                 </button>
               )}
               {agentVisible && (
-              <div className="card" style={{ padding: 0, overflow: "hidden", borderColor: "var(--blue-mid)" }}>
+              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
                 <button
                   onClick={() => setAgentOpen((v) => !v)}
                   style={{
@@ -1261,7 +1240,7 @@ function CalcResult({
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
 
       {/* ── LEFT col: COBOL terminal (always visible) ── */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16, position: "sticky", top: 16 }}>
@@ -1327,7 +1306,7 @@ function CalcResult({
       </div>{/* end LEFT col */}
 
       {/* ── RIGHT col: verdict + shockwave + actions + ACW + receipt ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
       {/* Bill change — shown once calc is done */}
       {done && (
@@ -1476,23 +1455,20 @@ function CalcResult({
         );
       })()}
 
-      {/* Batch line */}
+      {/* Batch line — inline, no extra card */}
       {done && (
-        <div className="card fade-up" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ padding: "11px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>Aurora SYS-01 Batch File</div>
-              <div style={{ fontSize: 10, color: "var(--dim)" }}>80-column · ready for 2:00 AM ingest · rejection rate: 0.00%</div>
-            </div>
+        <div className="fade-up" style={{ borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", background: "var(--hint)" }}>
+            <span style={{ fontSize: 11, color: "var(--dim)" }}>SYS01.INP · 80-col · 2:00 AM ingest</span>
             <button
               onClick={() => navigator.clipboard.writeText(result.batchLine)}
-              style={{ fontSize: 11, color: "var(--blue)", background: "var(--blue-light)", border: "1px solid var(--blue-mid)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", }}
+              style={{ fontSize: 11, color: "var(--blue)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
             >
               Copy
             </button>
           </div>
-          <div className="cobol-screen" style={{ padding: "12px 16px", overflowX: "auto" }}>
-            <div style={{ whiteSpace: "nowrap", fontSize: 13, fontWeight: 700, letterSpacing: "0.05em" }}>
+          <div className="cobol-screen" style={{ padding: "10px 14px", overflowX: "auto" }}>
+            <div style={{ whiteSpace: "nowrap", fontSize: 12, letterSpacing: "0.03em" }}>
               {result.batchLine}
             </div>
           </div>
@@ -2734,3 +2710,4 @@ function IssueIntakeModal({ onClose, onAccept, onOpenAccount, onOpenIntake }: {
     </div>
   );
 }
+
