@@ -6,6 +6,7 @@ import DialMeter from "@/components/DialMeter";
 import { runCobolEngine, CobolResult } from "@/lib/billing";
 import { findAccount, searchAccounts, AccountRecord } from "@/lib/accounts";
 import { UNIT_COSTS } from "@/lib/data";
+import { loadMeterReads, saveMeterRead, METERHUB_READ_DATE, MeterRead, nextDialEstimate, formatMeterDate } from "@/lib/meterhub";
 
 // ─── Types ────────────────────────────────────────────────────────
 type Step = "search" | "account" | "result";
@@ -38,6 +39,7 @@ export default function Home() {
   const [sessionDays, setSessionDays] = useState(0);
   const [heldAccounts, setHeldAccounts] = useState<Set<string>>(new Set());
   const [clearedIds, setClearedIds] = useState<Set<string>>(new Set());
+  const [meterReads, setMeterReads] = useState<Record<string, MeterRead>>({});
   const [batchQueue, setBatchQueue] = useState<QueuedRecord[]>([]);
   const [batchDrawerOpen, setBatchDrawerOpen] = useState(false);
   const billHeld = !!(account && heldAccounts.has(account.id));
@@ -72,6 +74,12 @@ export default function Home() {
   const dialRef = useRef<HTMLInputElement>(null);
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
+
+  useEffect(() => { setMeterReads(loadMeterReads()); }, []);
+
+  function rememberRead(accountId: string, read: number) {
+    setMeterReads(saveMeterRead({ accountId, read, date: METERHUB_READ_DATE }));
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -124,6 +132,7 @@ export default function Home() {
     setSessionCorrected((p) => p + Math.max(0, account.estimatedBill - res.total));
     setSessionDays((p) => p + account.openDays);
     setClearedIds((prev) => new Set(prev).add(account.id));
+    rememberRead(account.id, parsed);
     const acc = account;
     setBatchQueue((q) => [...q, {
       id: `${acc.id}-${Date.now()}`,
@@ -147,6 +156,7 @@ export default function Home() {
     setSessionCorrected((p) => p + Math.max(0, account.estimatedBill - res.total));
     setSessionDays((p) => p + account.openDays);
     setClearedIds((prev) => new Set(prev).add(account.id));
+    rememberRead(account.id, read);
     const acc = account;
     setBatchQueue((q) => [...q, {
       id: `${acc.id}-${Date.now()}`,
@@ -485,6 +495,10 @@ export default function Home() {
                   </div>
                 )}
               </div>
+
+              {meterReads[account.id] && (
+                <MeterHubNote saved={meterReads[account.id]} typicalQuarterlyKwh={account.typicalQuarterlyKwh} />
+              )}
 
               {/* The fix */}
               <div className="card" style={{ padding: 20 }}>
@@ -854,6 +868,7 @@ export default function Home() {
               result={result}
               parsedDial={parsedDial}
               receiptSent={receiptSent}
+              meterRead={meterReads[account.id]}
               onSendReceipt={() => setReceiptSent(true)}
               onBack={() => setStep("account")}
               onReset={reset}
@@ -884,13 +899,26 @@ export default function Home() {
 }
 
 // ── CalcResult — narrated calculation terminal ─────────────────────
+function MeterHubNote({ saved, typicalQuarterlyKwh }: { saved: MeterRead; typicalQuarterlyKwh: number }) {
+  const next = nextDialEstimate(saved.read, typicalQuarterlyKwh);
+  return (
+    <div className="card" style={{ padding: "14px 16px" }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--hold)", marginBottom: 4 }}>Saved to MeterHub</div>
+      <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.55 }}>
+        Verified read {saved.read.toLocaleString()} kWh on {formatMeterDate(saved.date)}. The next estimate is {next.toLocaleString()} kWh — that read plus a typical quarter of {typicalQuarterlyKwh.toLocaleString()} kWh, instead of the old SYS-06 guess.
+      </div>
+    </div>
+  );
+}
+
 function CalcResult({
-  account, result, parsedDial, receiptSent, onSendReceipt, onBack, onReset,
+  account, result, parsedDial, receiptSent, meterRead, onSendReceipt, onBack, onReset,
 }: {
   account: AccountRecord;
   result: CobolResult;
   parsedDial: number;
   receiptSent: boolean;
+  meterRead?: MeterRead;
   onSendReceipt: () => void;
   onBack: () => void;
   onReset: () => void;
@@ -1198,6 +1226,10 @@ function CalcResult({
             </div>
           </div>
         </div>
+      )}
+
+      {done && meterRead && (
+        <MeterHubNote saved={meterRead} typicalQuarterlyKwh={account.typicalQuarterlyKwh} />
       )}
 
       {/* Under the hood — collapsible COBOL proof */}
