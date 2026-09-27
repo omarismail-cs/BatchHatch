@@ -1,9 +1,10 @@
 "use client";
-import Image from "next/image";
 import { useEffect, useState, useRef, useCallback } from "react";
+import Logo from "@/components/Logo";
+import BatchClock from "@/components/BatchClock";
 import { runCobolEngine, CobolResult } from "@/lib/billing";
-import { findAccount, AccountRecord } from "@/lib/accounts";
-import { UNIT_COSTS, TOTAL_MONTHLY_EXCEPTIONS, LATEST_KPI } from "@/lib/data";
+import { findAccount, searchAccounts, AccountRecord } from "@/lib/accounts";
+import { UNIT_COSTS } from "@/lib/data";
 
 // ─── Types ────────────────────────────────────────────────────────
 type Step = "search" | "account" | "result";
@@ -12,6 +13,8 @@ export default function Home() {
   const [step, setStep] = useState<Step>("search");
   const [query, setQuery] = useState("");
   const [searchMiss, setSearchMiss] = useState("");   // last query that found nothing
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestIdx, setSuggestIdx] = useState(0);
   const [account, setAccount] = useState<AccountRecord | null>(null);
   const [dialRead, setDialRead] = useState("");
   const [running, setRunning] = useState(false);
@@ -53,12 +56,15 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, [openPalette]);
 
+  const suggestions = query.trim() ? searchAccounts(query).slice(0, 6) : [];
+  const showSuggest = suggestOpen && query.trim().length > 0;
+
   function handleSearch(q: string) {
     const trimmed = q.trim();
     if (!trimmed) return;
     const a = findAccount(trimmed);
     if (a) {
-      setAccount(a); setStep("account"); setQuery(""); setSearchMiss(""); setPaletteOpen(false);
+      setAccount(a); setStep("account"); setQuery(""); setSearchMiss(""); setSuggestOpen(false); setPaletteOpen(false);
     } else {
       setSearchMiss(trimmed);
     }
@@ -146,81 +152,30 @@ export default function Home() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
       {/* ── Navbar ──────────────────────────────────────────── */}
       <nav style={{
-        background: "var(--surface)",
+        background: "color-mix(in srgb, #f3e6d8 70%, transparent)",
+        backdropFilter: "blur(10px)",
         borderBottom: "1px solid var(--border)",
-        display: "flex", alignItems: "center",
-        padding: "0 20px", height: 56,
+        display: "flex", alignItems: "center", gap: 16,
+        padding: "0 20px", height: 52,
         position: "sticky", top: 0, zIndex: 40,
-        boxShadow: "0 1px 3px rgba(13,17,23,0.06)",
       }}>
-        {/* Logo — cropped via overflow hidden */}
-        <button onClick={reset} style={{ display: "flex", alignItems: "center", flexShrink: 0, cursor: "pointer", background: "none", border: "none" }}>
-          <div style={{ width: 200, height: 40, overflow: "hidden", position: "relative", flexShrink: 0 }}>
-              <Image
-              src="/logo.png"
-              alt="BatchHatch"
-              fill
-              sizes="200px"
-              style={{ objectFit: "cover", objectPosition: "center 50%" }}
-              priority
-            />
-          </div>
-        </button>
-
-        {/* Spacer */}
+        <Logo onClick={reset} />
         <div style={{ flex: 1 }} />
-
-        {/* Context pills */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <NavPill label={`${(LATEST_KPI.inboundCalls / 1000).toFixed(0)}k calls/mo`} color="#EF4444" />
-          <NavPill label={`${TOTAL_MONTHLY_EXCEPTIONS.toLocaleString()} errors/mo`} color="#F59E0B" />
-        </div>
-
-        {/* Session counter — updates live as bills get fixed */}
+        <BatchClock />
         {sessionBills > 0 && (
-          <div style={{
-            marginLeft: 12, display: "flex", alignItems: "center", gap: 0,
-            background: "var(--green-light)", border: "1px solid var(--green-mid)",
-            borderRadius: 10, overflow: "hidden", flexShrink: 0,
-          }}>
-            {[
-              { label: "fixed", value: String(sessionBills) },
-              { label: "corrected", value: `$${sessionCorrected.toFixed(0)}` },
-              { label: "days open", value: String(sessionDays) },
-            ].map((s, i) => (
-              <div key={s.label} style={{
-                padding: "5px 12px", textAlign: "center",
-                borderLeft: i > 0 ? "1px solid var(--green-mid)" : "none",
-              }}>
-                <div style={{ fontSize: 13, fontWeight: 900, color: "var(--green)", lineHeight: 1 }}>{s.value}</div>
-                <div style={{ fontSize: 9, color: "var(--green-dark)", letterSpacing: "0.04em", marginTop: 2 }}>{s.label}</div>
-              </div>
-            ))}
+          <div style={{ display: "flex", gap: 14, fontSize: 13, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+            <span><b style={{ color: "var(--text)", fontWeight: 500 }}>{sessionBills}</b> fixed</span>
+            <span><b style={{ color: "var(--text)", fontWeight: 500 }}>${sessionCorrected.toFixed(0)}</b> corrected</span>
+            <span><b style={{ color: "var(--text)", fontWeight: 500 }}>{sessionDays}</b> days</span>
           </div>
         )}
-
-        {/* Metrics link */}
-        <a href="/metrics" style={{
-          marginLeft: 16, fontSize: 11, fontWeight: 700, color: "var(--muted)",
-          textDecoration: "none", padding: "4px 10px", borderRadius: 8,
-          border: "1px solid var(--border-md)", whiteSpace: "nowrap",
-        }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--muted)")}
-        >
+        <a href="/metrics" style={{ fontSize: 13, fontWeight: 500, color: "var(--blue)", textDecoration: "none", whiteSpace: "nowrap" }}>
           Value case
         </a>
-
-        {/* Agent avatar */}
-        <div style={{
-          marginLeft: 10, width: 34, height: 34, borderRadius: "50%",
-          background: "var(--blue)", display: "flex", alignItems: "center",
-          justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700, flexShrink: 0,
-        }}>T1</div>
       </nav>
 
       {/* ── Main ────────────────────────────────────────────── */}
@@ -233,45 +188,113 @@ export default function Home() {
           {/* ── STEP 1: Search ──────────────────────────────── */}
           {step === "search" && (
             <div className="fade-up">
-              <div style={{ textAlign: "center", marginBottom: 32 }}>
-                <h1 style={{ fontSize: 28, fontWeight: 800, color: "var(--text)", lineHeight: 1.2, marginBottom: 10 }}>
-                  Fix the overbilled customer<br />
-                  <span style={{ color: "var(--blue)" }}>while they're still on the phone.</span>
+              <div style={{ marginBottom: 24 }}>
+                <h1 style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.03em", color: "var(--text)", lineHeight: 1.2, marginBottom: 8 }}>
+                  Fix the bill while they are still on the phone.
                 </h1>
-                <p style={{ color: "var(--muted)", fontSize: 13, maxWidth: "44ch", margin: "0 auto", lineHeight: 1.7 }}>
-                  Pull up their account, enter the meter reading the customer gives you,
-                  and the COBOL engine issues a corrected bill in 15ms.
+                <p style={{ color: "var(--muted)", fontSize: 14, maxWidth: "52ch", margin: 0, lineHeight: 1.55 }}>
+                  Pull up the account, take the dial reading, and the 1998 rating engine issues the corrected bill before the call ends.
                 </p>
               </div>
 
               {/* Search box */}
-              <div className="card" style={{ padding: 6, marginBottom: 20 }}>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    ref={searchRef}
-                    value={query}
-                    onChange={(e) => { setQuery(e.target.value); setSearchMiss(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleSearch(query); }}
-                    placeholder='Type account ID or name — e.g. "DUN-9021" or "Margaret"'
-                    style={{
-                      flex: 1, background: "transparent", border: "none", outline: "none",
-                      fontSize: 14, color: "var(--text)", padding: "10px 12px",
-                    }}
-                  />
-                  <button
-                    onClick={() => handleSearch(query)}
-                    style={{
-                      background: "var(--blue)", color: "#fff", border: "none",
-                      borderRadius: 10, padding: "10px 18px", fontSize: 13,
-                      fontWeight: 700, cursor: "pointer", flexShrink: 0,
-                      
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--blue-dark)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "var(--blue)")}
-                  >
-                    Search
-                  </button>
+              <div style={{ position: "relative", marginBottom: 20, zIndex: 5 }}>
+                <div className="card" style={{ padding: 6 }}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      ref={searchRef}
+                      value={query}
+                      role="combobox"
+                      aria-expanded={showSuggest}
+                      aria-autocomplete="list"
+                      aria-controls="account-suggest"
+                      onChange={(e) => { setQuery(e.target.value); setSearchMiss(""); setSuggestOpen(true); setSuggestIdx(0); }}
+                      onFocus={() => { if (query.trim()) setSuggestOpen(true); }}
+                      onKeyDown={(e) => {
+                        if (e.key === "ArrowDown" && suggestions.length) {
+                          e.preventDefault();
+                          setSuggestOpen(true);
+                          setSuggestIdx((i) => Math.min(i + 1, suggestions.length - 1));
+                        } else if (e.key === "ArrowUp" && suggestions.length) {
+                          e.preventDefault();
+                          setSuggestIdx((i) => Math.max(i - 1, 0));
+                        } else if (e.key === "Escape") {
+                          setSuggestOpen(false);
+                        } else if (e.key === "Enter") {
+                          if (showSuggest && suggestions[suggestIdx]) handleSearch(suggestions[suggestIdx].id);
+                          else handleSearch(query);
+                        }
+                      }}
+                      placeholder='Type account ID or name — e.g. "DUN-9021" or "Margaret"'
+                      style={{
+                        flex: 1, background: "transparent", border: "none", outline: "none",
+                        fontSize: 14, color: "var(--text)", padding: "10px 12px",
+                      }}
+                    />
+                    <button
+                      onClick={() => handleSearch(query)}
+                      style={{
+                        background: "var(--blue)", color: "#fff", border: "none",
+                        borderRadius: 10, padding: "10px 18px", fontSize: 13,
+                        fontWeight: 700, cursor: "pointer", flexShrink: 0,
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--blue-dark)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "var(--blue)")}
+                    >
+                      Search
+                    </button>
+                  </div>
                 </div>
+                {showSuggest && (
+                  <div
+                    id="account-suggest"
+                    role="listbox"
+                    className="card"
+                    style={{
+                      position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)",
+                      overflow: "hidden", padding: 4, zIndex: 20,
+                      background: "#fff",
+                      boxShadow: "0 16px 40px -12px rgba(28, 20, 16, 0.35)",
+                    }}
+                  >
+                    {suggestions.length === 0 ? (
+                      <div style={{ padding: "12px 12px", fontSize: 13, color: "var(--muted)" }}>
+                        No matching accounts
+                      </div>
+                    ) : suggestions.map((a, i) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        role="option"
+                        aria-selected={i === suggestIdx}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onMouseEnter={() => setSuggestIdx(i)}
+                        onClick={() => handleSearch(a.id)}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(0, 1fr) auto",
+                          gap: 12,
+                          width: "100%",
+                          textAlign: "left",
+                          border: 0,
+                          borderRadius: 8,
+                          padding: "10px 12px",
+                          cursor: "pointer",
+                          background: i === suggestIdx ? "var(--hint)" : "transparent",
+                          color: "inherit",
+                        }}
+                      >
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ display: "block", fontSize: 14, fontWeight: 500, color: "var(--text)" }}>{a.name}</span>
+                          <span className="mono" style={{ fontSize: 11, color: "var(--dim)" }}>{a.id} · {a.region}</span>
+                        </span>
+                        <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>
+                          ${a.estimatedBill.toFixed(2)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* No-result state */}
@@ -292,10 +315,11 @@ export default function Home() {
 
               {/* Quick-load accounts */}
               <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 10, color: "var(--dim)", marginBottom: 8, letterSpacing: "0.06em" }}>
-                  Active cases — click to load
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>Open cases</span>
+                  <span style={{ fontSize: 12, color: "var(--dim)" }}>Disputed amount, days waiting</span>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div className="card ledger">
                   {[
                     { id: "DUN-9021", name: "Margaret Holloway", bill: 842.10, days: 41, tag: "Threatening escalation", region: "Dunmoor" },
                     { id: "DUN-3345", name: "Edith Cargill",     bill: 723.50, days: 58, tag: "Solicitor involved", region: "Dunmoor" },
@@ -303,38 +327,19 @@ export default function Home() {
                     { id: "DUN-7782", name: "Patricia Okafor",   bill: 524.80, days: 19, tag: "", region: "Dunmoor" },
                     { id: "BAR-2209", name: "Robert Finch",      bill: 388.60, days: 12, tag: "", region: "Barrowdale" },
                   ].map((a) => (
-                    <button
-                      key={a.id}
-                      onClick={() => handleSearch(a.id)}
-                      className="card"
-                      style={{
-                        display: "flex", alignItems: "center", gap: 12,
-                        padding: "12px 16px", border: "1px solid var(--border)",
-                        cursor: "pointer", textAlign: "left", transition: "border-color 0.15s",
-                        
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--blue)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
-                    >
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "2px 7px", flexShrink: 0,
-                        background: "var(--bg)", border: "1px solid var(--border-md)",
-                        color: "var(--muted)", fontFamily: "var(--font-mono)",
-                      }}>{a.id}</span>
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block" }}>{a.name}</span>
-                        {a.tag && <span style={{ fontSize: 10, color: "var(--amber)" }}>{a.tag}</span>}
+                    <button key={a.id} onClick={() => handleSearch(a.id)} className="ledger-row">
+                      <span className="mono" style={{ fontSize: 11, color: "var(--dim)" }}>{a.id}</span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", display: "block" }}>{a.name}</span>
+                        <span style={{ fontSize: 12, color: a.tag ? "var(--blue)" : "var(--dim)" }}>{a.tag || a.region}</span>
                       </span>
-                      <span style={{ flexShrink: 0, textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+                      <span style={{ textAlign: "right" }}>
                         {heldAccounts.has(a.id) ? (
-                          <span style={{
-                            fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6,
-                            background: "var(--green-light)", color: "var(--green)", border: "1px solid var(--green-mid)",
-                          }}>HELD</span>
+                          <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text)", display: "block" }}>Held</span>
                         ) : (
-                          <span style={{ fontSize: 15, fontWeight: 800, color: "var(--red)", display: "block" }}>${a.bill.toFixed(2)}</span>
+                          <span className="figure" style={{ fontSize: 22, color: "var(--text)", display: "block", lineHeight: 1 }}>${a.bill.toFixed(2)}</span>
                         )}
-                        <span style={{ fontSize: 10, color: "var(--dim)" }}>{a.days}d open</span>
+                        <span style={{ fontSize: 12, color: "var(--dim)" }}>{a.days} days</span>
                       </span>
                     </button>
                   ))}
@@ -362,7 +367,7 @@ export default function Home() {
                     <div style={{ fontSize: 10, color: "var(--dim)", marginBottom: 4, letterSpacing: "0.05em" }}>
                       {account.region} · {account.id} · {account.openDays} days open
                     </div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)" }}>{account.name}</div>
+                    <div style={{ fontSize: 18, fontWeight: 500, color: "var(--text)" }}>{account.name}</div>
                     <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{account.address}</div>
                   </div>
                   <StatusBadge status={account.status} />
@@ -377,7 +382,7 @@ export default function Home() {
                 }}>
                   <div>
                     <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Disputed bill amount</div>
-                    <div style={{ fontSize: 28, fontWeight: 900, color: "var(--red)", lineHeight: 1 }}>
+                    <div className="figure" style={{ fontSize: 36, color: "var(--red)", lineHeight: 1 }}>
                       ${account.estimatedBill.toFixed(2)}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
@@ -387,7 +392,7 @@ export default function Home() {
                   <div style={{ fontSize: 20, color: "var(--red-mid)" }}>→</div>
                   <div>
                     <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Meter last read</div>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: "var(--red)", lineHeight: 1.1 }}>
+                    <div className="figure" style={{ fontSize: 26, color: "var(--text)", lineHeight: 1.1 }}>
                       {(() => { const [y,m,d] = account.previousReadDate.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); })()}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
@@ -399,8 +404,8 @@ export default function Home() {
                 {account.agentNotes && (
                   <div style={{
                     marginTop: 12, padding: "8px 12px", borderRadius: 8,
-                    background: "#FFF7ED", border: "1px solid #FED7AA",
-                    fontSize: 11, color: "#92400E",
+                    background: "var(--hint)", border: "1px solid var(--border)",
+                    fontSize: 11, color: "var(--text)",
                   }}>
                     {account.agentNotes}
                   </div>
@@ -433,7 +438,7 @@ export default function Home() {
                       {/* Col 1 — Last verified read */}
                       <div style={{ padding: "10px 12px", borderRadius: "10px 0 0 10px" }}>
                         <div style={{ fontSize: 9, color: "var(--dim)", fontWeight: 700, letterSpacing: "0.05em", marginBottom: 4 }}>LAST VERIFIED READ</div>
-                        <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>
+                        <div style={{ fontSize: 15, fontWeight: 500, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>
                           {account.previousRead.toLocaleString()} kWh
                         </div>
                         <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 2 }}>{account.previousReadDate}</div>
@@ -450,11 +455,11 @@ export default function Home() {
                             <>
                               <strong style={{ color: "#fff" }}>Why this matters</strong><br /><br />
                               Ofgem requires an actual meter read at least once every 2 years, but best practice is quarterly (every ~90 days). The longer the gap, the more the estimated reading can drift from reality.<br /><br />
-                              <strong style={{ color: "#FCD34D" }}>{daysSince} days</strong> without a verified read is {daysSince > 90 ? "above the recommended 90-day threshold." : "within threshold, but drift is still possible."}
+                              <strong style={{ color: "#fffcf8" }}>{daysSince} days</strong> without a verified read is {daysSince > 90 ? "above the recommended 90-day threshold." : "within threshold, but drift is still possible."}
                             </>
                           } />
                         </div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: daysColor, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                        <div style={{ fontSize: 22, fontWeight: 500, color: daysColor, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                           {daysSince}
                         </div>
                         <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 2 }}>
@@ -472,16 +477,16 @@ export default function Home() {
                           <InfoTip content={
                             <>
                               <strong style={{ color: "#fff" }}>How SYS-06 built this estimate</strong><br /><br />
-                              <span style={{ color: "#94A3B8" }}>Formula:</span>{" "}
+                              <span style={{ color: "#a8a29e" }}>Formula:</span>{" "}
                               last read + (daily avg × days in period)<br /><br />
-                              <span style={{ color: "#FCD34D" }}>{account.previousRead.toLocaleString()}</span>
-                              {" + "}(<span style={{ color: "#F87171" }}>{impliedDailyRate} kWh/day</span> × {daysSince} days)
-                              {" = "}<span style={{ color: "#F87171" }}>{account.estimatedRead.toLocaleString()}</span><br /><br />
-                              The implied rate of <strong style={{ color: "#F87171" }}>{impliedDailyRate} kWh/day</strong> is roughly <strong style={{ color: "#F87171" }}>{Math.round(impliedDailyRate / typicalDailyRate)}×</strong> the typical rate of ~{typicalDailyRate} kWh/day for this household. SYS-06's seasonal curve (calibrated 2010–2012) hasn't been updated and doesn't account for changes in this customer's usage pattern.
+                              <span style={{ color: "#fffcf8" }}>{account.previousRead.toLocaleString()}</span>
+                              {" + "}(<span style={{ color: "#fffcf8" }}>{impliedDailyRate} kWh/day</span> × {daysSince} days)
+                              {" = "}<span style={{ color: "#fffcf8" }}>{account.estimatedRead.toLocaleString()}</span><br /><br />
+                              The implied rate of <strong style={{ color: "#fffcf8" }}>{impliedDailyRate} kWh/day</strong> is roughly <strong style={{ color: "#fffcf8" }}>{Math.round(impliedDailyRate / typicalDailyRate)}×</strong> the typical rate of ~{typicalDailyRate} kWh/day for this household. SYS-06's seasonal curve (calibrated 2010–2012) hasn't been updated and doesn't account for changes in this customer's usage pattern.
                             </>
                           } />
                         </div>
-                        <div style={{ fontSize: 15, fontWeight: 800, color: "var(--red)", fontVariantNumeric: "tabular-nums" }}>
+                        <div style={{ fontSize: 15, fontWeight: 500, color: "var(--red)", fontVariantNumeric: "tabular-nums" }}>
                           {account.estimatedRead.toLocaleString()} kWh
                         </div>
                         <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 2 }}>
@@ -530,7 +535,7 @@ export default function Home() {
                     width: "100%",
                     border: `2px solid ${dialBelowPrev || dialNegativeUsage ? "var(--red)" : dialValid ? "var(--blue)" : "var(--border)"}`,
                     borderRadius: 12, padding: "14px 16px", fontSize: 28,
-                    fontWeight: 800, color: dialBelowPrev || dialNegativeUsage ? "var(--red)" : "var(--text)",
+                    fontWeight: 500, color: dialBelowPrev || dialNegativeUsage ? "var(--red)" : "var(--text)",
                     background: "var(--bg)", outline: "none", marginBottom: 6,
                     transition: "border-color 0.15s",
                     fontVariantNumeric: "tabular-nums",
@@ -568,7 +573,7 @@ export default function Home() {
                     width: "100%", padding: "16px", borderRadius: 12,
                     background: dialValid && !running ? "var(--blue)" : "var(--border)",
                     color: dialValid && !running ? "#fff" : "var(--dim)",
-                    border: "none", fontSize: 16, fontWeight: 800,
+                    border: "none", fontSize: 16, fontWeight: 500,
                     cursor: dialValid && !running ? "pointer" : "not-allowed",
                     transition: "all 0.15s", display: "flex",
                     alignItems: "center", justifyContent: "center", gap: 10,
@@ -581,56 +586,42 @@ export default function Home() {
                   {running ? (
                     <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>⟳</span> Running COBOL engine…</>
                   ) : (
-                    <>FIX BILL NOW</>
+                    <>Correct the bill</>
                   )}
                 </button>
                 <div style={{ textAlign: "center", fontSize: 10, color: "var(--dim)", marginTop: 8 }}>
                   Ctrl+Enter · Aurora SYS-01 rating engine · batch record ready for 2am ingest
                 </div>
 
-                {/* Hold bill — preventive action */}
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
                   <button
+                    type="button"
                     onClick={toggleHold}
-                    disabled={false}
                     style={{
-                      width: "100%", padding: "10px 16px", fontSize: 12, fontWeight: 700,
-                      background: billHeld ? "var(--bg)" : "none",
-                      color: billHeld ? "var(--green)" : "var(--muted)",
-                      border: `1px solid ${billHeld ? "var(--green-mid)" : "var(--border-md)"}`,
-                      borderRadius: 10, cursor: billHeld ? "default" : "pointer",
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                      width: "100%", padding: "10px 16px", fontSize: 13, fontWeight: 500,
+                      background: billHeld ? "var(--hint)" : "transparent",
+                      color: "var(--text)",
+                      border: "1px solid var(--border-md)",
+                      borderRadius: 10, cursor: "pointer",
                     }}
                   >
-                    {billHeld ? "✓ Bill held — click to release" : "Hold tonight's bill dispatch"}
+                    {billHeld ? "Bill held — click to release" : "Hold tonight's bill dispatch"}
                   </button>
                   {!billHeld && (
-                    <div style={{ fontSize: 10, color: "var(--dim)", textAlign: "center", marginTop: 5 }}>
+                    <div style={{ fontSize: 12, color: "var(--dim)", textAlign: "center", marginTop: 6 }}>
                       Suspends the 2am batch dispatch while you get a verified read
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Hold confirmation card */}
               {billHeld && (
-                <div className="card fade-up" style={{
-                  padding: "16px 20px", borderColor: "var(--green-mid)", background: "var(--green-light)",
-                  display: "flex", gap: 14, alignItems: "flex-start",
-                }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: 10, background: "var(--green)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: "#fff", fontSize: 14, flexShrink: 0,
-                  }}>⏸</div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: "var(--green-dark)", marginBottom: 4 }}>
-                      Bill held — ${account.estimatedBill.toFixed(2)} will not dispatch tonight
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--green-dark)", lineHeight: 1.6, opacity: 0.85 }}>
-                      The 2am SYS-01 batch job will skip this account. {account.name.split(" ")[0]} won&apos;t receive
-                      the estimated bill while you get a verified dial read. Case stays open.
-                    </div>
+                <div className="card fade-up" style={{ padding: "16px 20px" }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", marginBottom: 4 }}>
+                    Bill held — ${account.estimatedBill.toFixed(2)} will not dispatch tonight
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.55 }}>
+                    The 2am SYS-01 batch job will skip this account. {account.name.split(" ")[0]} won&apos;t receive the estimated bill while you get a verified dial read. Case stays open.
                   </div>
                 </div>
               )}
@@ -648,7 +639,7 @@ export default function Home() {
                     <div style={{
                       width: 20, height: 20, borderRadius: 6, background: "var(--blue)",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 10, color: "#fff", fontWeight: 900, flexShrink: 0,
+                      fontSize: 10, color: "#fff", fontWeight: 500, flexShrink: 0,
                     }}>✦</div>
                     <span style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)" }}>Agent auto-fix</span>
                     <span style={{ fontSize: 11, color: "var(--dim)" }}>— let the AI handle it</span>
@@ -863,9 +854,9 @@ function CalcResult({
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ display: "flex", gap: 5 }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#FF5F56" }} />
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#FFBD2E" }} />
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#27C93F" }} />
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--border-md)" }} />
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--border-md)" }} />
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--border-md)" }} />
             </div>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>
@@ -922,7 +913,7 @@ function CalcResult({
               <div style={{ fontSize: 11, color: "var(--dim)", marginBottom: 6 }}>
                 Overcharged bill
               </div>
-              <div style={{ fontSize: 30, fontWeight: 900, color: "var(--red)", textDecoration: "line-through", opacity: 0.65 }}>
+              <div className="figure" style={{ fontSize: 34, color: "var(--dim)", textDecoration: "line-through", textDecorationColor: "var(--blue)" }}>
                 ${account.estimatedBill.toFixed(2)}
               </div>
               <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 4 }}>
@@ -937,7 +928,7 @@ function CalcResult({
               <div style={{ fontSize: 11, color: "var(--dim)", marginBottom: 6 }}>
                 Corrected bill
               </div>
-              <div className="num-tick" style={{ fontSize: 42, fontWeight: 900, color: "var(--green)", lineHeight: 1 }}>
+              <div className="num-tick figure" style={{ fontSize: 56, color: "var(--text)", lineHeight: 1 }}>
                 ${result.total.toFixed(2)}
               </div>
               <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 4 }}>
@@ -1001,7 +992,7 @@ function CalcResult({
             style={{
               flex: 1, padding: "14px", borderRadius: 12, border: "none",
               background: receiptSent ? "var(--green)" : "var(--text)",
-              color: "#fff", fontSize: 14, fontWeight: 800,
+              color: "#fff", fontSize: 14, fontWeight: 500,
               cursor: "pointer", transition: "all 0.2s", 
             }}
           >
@@ -1066,7 +1057,7 @@ function BillAdjustmentReceipt({
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: "#fff", marginBottom: 2 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: "#fff", marginBottom: 2 }}>
             Bill Adjustment Confirmed
           </div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)" }}>
@@ -1107,7 +1098,7 @@ function BillAdjustmentReceipt({
         }}>
           <div style={{ padding: "14px 16px", background: "var(--red-light)", borderRight: "1px solid var(--border)" }}>
             <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 6, fontWeight: 600 }}>ORIGINAL BILL</div>
-            <div style={{ fontSize: 26, fontWeight: 900, color: "var(--red)", lineHeight: 1, textDecoration: "line-through", opacity: 0.7 }}>
+            <div className="figure" style={{ fontSize: 28, color: "var(--dim)", lineHeight: 1, textDecoration: "line-through", textDecorationColor: "var(--blue)" }}>
               ${account.estimatedBill.toFixed(2)}
             </div>
             <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
@@ -1116,7 +1107,7 @@ function BillAdjustmentReceipt({
           </div>
           <div style={{ padding: "14px 16px", background: "var(--green-light)" }}>
             <div style={{ fontSize: 10, color: "var(--green)", marginBottom: 6, fontWeight: 700 }}>CORRECTED BILL</div>
-            <div style={{ fontSize: 26, fontWeight: 900, color: "var(--green)", lineHeight: 1 }}>
+            <div className="figure" style={{ fontSize: 28, color: "var(--text)", lineHeight: 1 }}>
               ${result.total.toFixed(2)}
             </div>
             <div style={{ fontSize: 10, color: "var(--green)", marginTop: 4 }}>
@@ -1436,19 +1427,19 @@ function OutageAlert({ outage, customerFirstName }: { outage: OutageRecord; cust
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           {/* Status dot */}
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--amber)", flexShrink: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#78350F", whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text)", whiteSpace: "nowrap" }}>
             Grid incident active
           </span>
-          <span style={{ fontSize: 12, color: "#92400E", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: 12, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             · {outage.area}
           </span>
         </div>
         <button
           onClick={() => setExpanded((v) => !v)}
           style={{
-            flexShrink: 0, fontSize: 11, fontWeight: 600, color: "#92400E",
+            flexShrink: 0, fontSize: 11, fontWeight: 500, color: "var(--muted)",
             background: "none", border: "none", cursor: "pointer", padding: 0,
-            textDecoration: "underline", textDecorationColor: "#D9770660",
+            textDecoration: "underline", textDecorationColor: "var(--border-md)",
           }}
         >
           {expanded ? "Less ▲" : "Details ▼"}
@@ -1461,10 +1452,10 @@ function OutageAlert({ outage, customerFirstName }: { outage: OutageRecord; cust
         padding: "10px 14px",
         display: "flex", flexDirection: "column", gap: 6,
       }}>
-        <div style={{ fontSize: 12, color: "#78350F", lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.5 }}>
           Debt-collection letters to <strong>{customerFirstName}</strong> are paused while the incident is open.
         </div>
-        <div style={{ fontSize: 12, color: "#78350F", lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.5 }}>
           Regulatory compensation of <strong>${outage.compensationApplied.toFixed(2)}</strong> has been credited (Licence Cond. 14B).
         </div>
       </div>
@@ -1475,7 +1466,7 @@ function OutageAlert({ outage, customerFirstName }: { outage: OutageRecord; cust
           borderTop: "1px solid var(--amber-mid)",
           padding: "10px 14px",
           display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12,
-          background: "#FEF3C7",
+          background: "var(--bg)",
         }}>
           {[
             { label: "Ref", value: outage.ref },
@@ -1483,149 +1474,15 @@ function OutageAlert({ outage, customerFirstName }: { outage: OutageRecord; cust
             { label: "Credit", value: `$${outage.compensationApplied.toFixed(2)}` },
           ].map((f) => (
             <div key={f.label}>
-              <div style={{ fontSize: 9, fontWeight: 700, color: "#92400E", letterSpacing: "0.06em", marginBottom: 2 }}>
+              <div style={{ fontSize: 9, fontWeight: 500, color: "var(--muted)", letterSpacing: "0.06em", marginBottom: 2 }}>
                 {f.label.toUpperCase()}
               </div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "#78350F" }}>{f.value}</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>{f.value}</div>
             </div>
           ))}
         </div>
       )}
     </div>
-  );
-}
-
-// ── Reading history chart — quarterly usage bars ───────────────────
-function ReadingHistoryChart({
-  history, correctedRead,
-}: {
-  history: AccountRecord["readingHistory"];
-  correctedRead?: number;
-}) {
-  // Build per-period usage deltas (skip the first point — it's just the baseline)
-  type Bar = { label: string; kwh: number; type: "actual" | "estimated" | "corrected" };
-  const bars: Bar[] = [];
-  for (let i = 1; i < history.length; i++) {
-    const prev = history[i - 1], cur = history[i];
-    const kwh = cur.read - prev.read;
-    const dt = new Date(cur.date);
-    const label = dt.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
-    bars.push({ label, kwh, type: cur.type });
-  }
-  // If corrected read is supplied, replace the last (bad estimate) bar
-  if (correctedRead !== undefined) {
-    const prev = history[history.length - 2];
-    bars[bars.length - 1] = {
-      label: bars[bars.length - 1].label,
-      kwh: correctedRead - prev.read,
-      type: "corrected",
-    };
-  }
-
-  const maxKwh = Math.max(...bars.map((b) => b.kwh));
-  const W = 520, H = 130;
-  const PAD = { t: 24, r: 16, b: 28, l: 52 };
-  const plotW = W - PAD.l - PAD.r;
-  const plotH = H - PAD.t - PAD.b;
-  const barW = (plotW / bars.length) * 0.55;
-  const gap   = plotW / bars.length;
-
-  const barColor = (type: Bar["type"]) =>
-    type === "corrected" ? "#0E9B52" :
-    type === "estimated" ? "#E02424" : "#2462E8";
-  const barFill = (type: Bar["type"]) =>
-    type === "corrected" ? "#EDFBF3" :
-    type === "estimated" ? "#FEF1F1" : "#EEF3FD";
-
-  const fmtKwh = (v: number) =>
-    v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
-
-  // Y gridlines
-  const yStep = maxKwh / 3;
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", overflow: "visible" }}>
-      {/* Gridlines */}
-      {[0, 1, 2, 3].map((i) => {
-        const val = yStep * i;
-        const y = PAD.t + plotH - (val / maxKwh) * plotH;
-        return (
-          <g key={i}>
-            <line x1={PAD.l} y1={y} x2={W - PAD.r} y2={y}
-              stroke="#E4E8F0" strokeWidth={1} strokeDasharray={i === 0 ? "0" : "3 2"} />
-            <text x={PAD.l - 6} y={y + 4} textAnchor="end" fontSize={9} fill="#8896A8">
-              {fmtKwh(val)}
-            </text>
-          </g>
-        );
-      })}
-
-      {/* Bars */}
-      {bars.map((b, i) => {
-        const cx = PAD.l + gap * i + gap / 2;
-        const bh = Math.max(2, (b.kwh / maxKwh) * plotH);
-        const by = PAD.t + plotH - bh;
-        const color = barColor(b.type);
-        const fill  = barFill(b.type);
-        const isWrong = b.type === "estimated";
-
-        return (
-          <g key={b.label}>
-            {/* Bar */}
-            <rect x={cx - barW / 2} y={by} width={barW} height={bh}
-              fill={fill} stroke={color} strokeWidth={1.5} rx={3} />
-
-            {/* Value label above bar */}
-            <text x={cx} y={by - 4} textAnchor="middle" fontSize={isWrong ? 10 : 9}
-              fontWeight={isWrong ? "bold" : "normal"} fill={color}>
-              {fmtKwh(b.kwh)}
-            </text>
-
-            {/* "~Nx typical" annotation on the bad bar */}
-            {isWrong && bars.filter(x => x.type !== "estimated").length > 0 && (() => {
-              const typicalAvg = bars.filter(x => x.type !== "estimated" && x.type !== "corrected")
-                .reduce((s, x) => s + x.kwh, 0) /
-                Math.max(1, bars.filter(x => x.type !== "estimated" && x.type !== "corrected").length);
-              const multiple = Math.round(b.kwh / typicalAvg);
-              return (
-                <text x={cx} y={by - 16} textAnchor="middle" fontSize={8.5}
-                  fill="#E02424" opacity={0.8}>
-                  ~{multiple}× typical
-                </text>
-              );
-            })()}
-
-            {/* X label */}
-            <text x={cx} y={H - 6} textAnchor="middle" fontSize={9} fill="#8896A8">
-              {b.label}
-            </text>
-          </g>
-        );
-      })}
-
-      {/* Legend */}
-      <g transform={`translate(${PAD.l}, 10)`}>
-        <rect x={0} y={-6} width={10} height={10} rx={2}
-          fill="#EEF3FD" stroke="#2462E8" strokeWidth={1.5} />
-        <text x={14} y={4} fontSize={9} fill="#8896A8">Actual usage</text>
-        <rect x={76} y={-6} width={10} height={10} rx={2}
-          fill="#FEF1F1" stroke="#E02424" strokeWidth={1.5} />
-        <text x={90} y={4} fontSize={9} fill="#8896A8">SYS-06 estimate</text>
-        {correctedRead !== undefined && (
-          <>
-            <rect x={176} y={-6} width={10} height={10} rx={2}
-              fill="#EDFBF3" stroke="#0E9B52" strokeWidth={1.5} />
-            <text x={190} y={4} fontSize={9} fill="#0E9B52">Corrected</text>
-          </>
-        )}
-      </g>
-
-      {/* kWh unit label */}
-      <text x={PAD.l - 6} y={PAD.t - 10} textAnchor="middle" fontSize={8.5}
-        fill="#8896A8" transform={`rotate(-90, ${PAD.l - 36}, ${PAD.t + plotH / 2})`}>
-        kWh / period
-      </text>
-    </svg>
   );
 }
 
@@ -1635,27 +1492,11 @@ function StepDots({ step }: { step: Step }) {
   const labels = ["Find account", "Enter dial read", "Bill fixed"];
   const idx = steps.indexOf(step);
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0, marginBottom: 28 }}>
+    <div style={{ display: "flex", gap: 18, marginBottom: 24, fontSize: 13 }}>
       {steps.map((s, i) => (
-        <div key={s} style={{ display: "flex", alignItems: "center" }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-            <div style={{
-              width: 28, height: 28, borderRadius: "50%",
-              background: i === idx ? "var(--blue)" : i < idx ? "var(--green)" : "var(--border)",
-              color: i <= idx ? "#fff" : "var(--dim)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 11, fontWeight: 700, transition: "all 0.2s",
-            }}>
-              {i < idx ? "✓" : i + 1}
-            </div>
-            <div style={{ fontSize: 9, color: i === idx ? "var(--blue)" : i < idx ? "var(--green)" : "var(--dim)", fontWeight: i === idx ? 700 : 400, whiteSpace: "nowrap" }}>
-              {labels[i]}
-            </div>
-          </div>
-          {i < steps.length - 1 && (
-            <div style={{ width: 48, height: 2, background: i < idx ? "var(--green)" : "var(--border)", margin: "0 4px", marginBottom: 18, transition: "background 0.3s" }} />
-          )}
-        </div>
+        <span key={s} style={{ color: i === idx ? "var(--text)" : "var(--dim)", fontWeight: i === idx ? 500 : 400 }}>
+          {labels[i]}
+        </span>
       ))}
     </div>
   );
@@ -1665,7 +1506,7 @@ function StepDots({ step }: { step: Step }) {
 function StatusBadge({ status }: { status: string }) {
   const s: Record<string, { label: string; bg: string; color: string }> = {
     PENDING_OVERNIGHT_BATCH: { label: "Overbilled — Estimate Error", bg: "var(--red-light)", color: "var(--red)" },
-    ESCALATED:               { label: "Escalated", bg: "#FFF7ED", color: "#B45309" },
+    ESCALATED:               { label: "Escalated", bg: "var(--hint)", color: "var(--text)" },
     VERIFIED_CLEARED:        { label: "Cleared", bg: "var(--green-light)", color: "var(--green)" },
     CLOSED:                  { label: "Closed", bg: "var(--bg)", color: "var(--dim)" },
   };
@@ -1695,7 +1536,7 @@ function InfoTip({ content }: { content: React.ReactNode }) {
           display: "inline-flex", alignItems: "center", justifyContent: "center",
           width: 15, height: 15, borderRadius: "50%",
           background: "var(--border)", color: "var(--muted)",
-          border: "none", cursor: "default", fontSize: 9, fontWeight: 800,
+          border: "none", cursor: "default", fontSize: 9, fontWeight: 500,
           flexShrink: 0, lineHeight: 1,
         }}
         aria-label="More information"
@@ -1706,7 +1547,7 @@ function InfoTip({ content }: { content: React.ReactNode }) {
         <div style={{
           position: "absolute", bottom: "calc(100% + 8px)", left: "50%",
           transform: "translateX(-50%)",
-          background: "#0D1117", color: "#E2E8F0",
+          background: "#1c1917", color: "#e7e5e4",
           borderRadius: 10, padding: "10px 14px",
           fontSize: 11, lineHeight: 1.65, width: 260,
           boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
@@ -1719,7 +1560,7 @@ function InfoTip({ content }: { content: React.ReactNode }) {
             width: 0, height: 0,
             borderLeft: "6px solid transparent",
             borderRight: "6px solid transparent",
-            borderTop: "6px solid #0D1117",
+            borderTop: "6px solid #1c1917",
           }} />
         </div>
       )}
@@ -1727,22 +1568,7 @@ function InfoTip({ content }: { content: React.ReactNode }) {
   );
 }
 
-// ── Nav pill ───────────────────────────────────────────────────────
-function NavPill({ label, color }: { label: string; color: string }) {
-  return (
-    <div style={{
-      fontSize: 10, fontWeight: 600, color, borderRadius: 100,
-      padding: "3px 9px", border: `1px solid ${color}40`,
-      background: `${color}18`, whiteSpace: "nowrap",
-    }}>
-      {label}
-    </div>
-  );
-}
-
 // ── Command palette (Ctrl+K) ───────────────────────────────────────
-import { searchAccounts } from "@/lib/accounts";
-
 function PaletteModal({ onSelect, onClose }: { onSelect: (a: AccountRecord) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -1785,10 +1611,10 @@ function PaletteModal({ onSelect, onClose }: { onSelect: (a: AccountRecord) => v
               }}
             >
               <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 5, padding: "2px 7px", flexShrink: 0,
-                background: acc.region === "Dunmoor" ? "#EDE9FE" : "#EFF6FF",
-                color:      acc.region === "Dunmoor" ? "#6D28D9" : "#1D4ED8" }}>{acc.id}</span>
+                background: "var(--hint)",
+                color: "var(--muted)" }}>{acc.id}</span>
               <span style={{ flex: 1, fontSize: 13, color: "var(--text)", fontWeight: 500 }}>{acc.name}</span>
-              <span style={{ fontSize: 13, fontWeight: 800, color: "var(--red)" }}>${acc.estimatedBill.toFixed(2)}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--red)" }}>${acc.estimatedBill.toFixed(2)}</span>
             </button>
           ))}
         </div>

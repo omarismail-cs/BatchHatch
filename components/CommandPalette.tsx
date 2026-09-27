@@ -82,8 +82,8 @@ export default function CommandPalette({ onSelect, onClose }: Props) {
                 <span
                   className="text-[10px] font-bold rounded-md px-1.5 py-0.5 shrink-0"
                   style={{
-                    background: acc.region === "Dunmoor" ? "#EDE9FE" : "#EFF6FF",
-                    color:      acc.region === "Dunmoor" ? "#6D28D9" : "#1D4ED8",
+                    background: "var(--hint)",
+                    color: "var(--muted)",
                   }}
                 >
                   {acc.id}
