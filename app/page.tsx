@@ -24,7 +24,12 @@ export default function Home() {
   const [sessionBills, setSessionBills] = useState(0);
   const [sessionCorrected, setSessionCorrected] = useState(0);
   const [sessionDays, setSessionDays] = useState(0);
-  const [billHeld, setBillHeld] = useState(false);
+  const [heldAccounts, setHeldAccounts] = useState<Set<string>>(new Set());
+  const billHeld = !!(account && heldAccounts.has(account.id));
+  function holdBill() {
+    if (!account) return;
+    setHeldAccounts((prev) => new Set([...prev, account.id]));
+  }
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences.");
   const [agentRunning, setAgentRunning] = useState(false);
@@ -132,7 +137,7 @@ export default function Home() {
   function reset() {
     setStep("search"); setAccount(null); setDialRead("");
     setResult(null); setReceiptSent(false); setParsedDial(0);
-    setAgentOpen(false); setAgentReply(""); setAgentRunning(false); setBillHeld(false);
+    setAgentOpen(false); setAgentReply(""); setAgentRunning(false);
   }
 
   return (
@@ -314,8 +319,15 @@ export default function Home() {
                         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block" }}>{a.name}</span>
                         {a.tag && <span style={{ fontSize: 10, color: "var(--amber)" }}>{a.tag}</span>}
                       </span>
-                      <span style={{ flexShrink: 0, textAlign: "right" }}>
-                        <span style={{ fontSize: 15, fontWeight: 800, color: "var(--red)", display: "block" }}>${a.bill.toFixed(2)}</span>
+                      <span style={{ flexShrink: 0, textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+                        {heldAccounts.has(a.id) ? (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6,
+                            background: "var(--green-light)", color: "var(--green)", border: "1px solid var(--green-mid)",
+                          }}>HELD</span>
+                        ) : (
+                          <span style={{ fontSize: 15, fontWeight: 800, color: "var(--red)", display: "block" }}>${a.bill.toFixed(2)}</span>
+                        )}
                         <span style={{ fontSize: 10, color: "var(--dim)" }}>{a.days}d open</span>
                       </span>
                     </button>
@@ -573,7 +585,7 @@ export default function Home() {
                 {/* Hold bill — preventive action */}
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
                   <button
-                    onClick={() => setBillHeld(true)}
+                    onClick={holdBill}
                     disabled={billHeld}
                     style={{
                       width: "100%", padding: "10px 16px", fontSize: 12, fontWeight: 700,
