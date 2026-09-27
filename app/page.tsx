@@ -18,6 +18,24 @@ type QueuedRecord = {
   type: "ADJ" | "HOLD";
   addedAt: number;
 };
+type IntakeRecord = {
+  reference: string;
+  accountQuery: string;
+  category: string;
+  channel: string;
+  route: string;
+  status: string;
+  summary: string;
+  impact: string;
+  meterRead?: string;
+  linkedAccountId?: string;
+  createdAt: number;
+};
+
+function isPlausibleReading(account: AccountRecord, read: number): boolean {
+  const usage = read - account.previousRead;
+  return Number.isFinite(read) && read > 0 && usage > 0 && usage <= account.typicalQuarterlyKwh * 3;
+}
 
 export default function Home() {
   const [step, setStep] = useState<Step>("search");
@@ -42,6 +60,10 @@ export default function Home() {
   const [meterReads, setMeterReads] = useState<Record<string, MeterRead>>({});
   const [batchQueue, setBatchQueue] = useState<QueuedRecord[]>([]);
   const [batchDrawerOpen, setBatchDrawerOpen] = useState(false);
+  const [intakeOpen, setIntakeOpen] = useState(false);
+  const [intakeRecords, setIntakeRecords] = useState<IntakeRecord[]>([]);
+  const [selectedIntake, setSelectedIntake] = useState<IntakeRecord | null>(null);
+  const openIntakeCount = intakeRecords.filter((issue) => !issue.linkedAccountId).length;
   const billHeld = !!(account && heldAccounts.has(account.id));
   function toggleHold() {
     if (!account) return;
@@ -70,6 +92,8 @@ export default function Home() {
   const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences.");
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentReply, setAgentReply] = useState("");
+  const [autoAllow, setAutoAllow] = useState(true);
+  const [automationUsed, setAutomationUsed] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const dialRef = useRef<HTMLInputElement>(null);
 
@@ -100,7 +124,7 @@ export default function Home() {
     if (!trimmed) return;
     const a = findAccount(trimmed);
     if (a) {
-      setAccount(a); setStep("account"); setQuery(""); setSearchMiss(""); setSuggestOpen(false); setPaletteOpen(false);
+      setAccount(a); setStep("account"); setQuery(""); setSearchMiss(""); setSuggestOpen(false); setPaletteOpen(false); setAutomationUsed(false);
     } else {
       setSearchMiss(trimmed);
     }
@@ -113,12 +137,22 @@ export default function Home() {
   const dialNegativeUsage = !!(account && dialRead && !isNaN(dialParsed) && dialParsed === account.previousRead);
   // Flag usage that far exceeds typical quarterly consumption — ceiling is 3× typical to allow for edge cases
   const dialUnrealistic  = !!(account && dialRead && !isNaN(dialParsed) && dialUsage > account.typicalQuarterlyKwh * 3);
-  const dialValid = !!(dialRead && !isNaN(dialParsed) && dialParsed > 0 && !dialBelowPrev && !dialNegativeUsage && !dialUnrealistic);
+  const dialValid = !!(account && dialRead && isPlausibleReading(account, dialParsed));
+  const autoCandidateRead = account
+    ? (dialRead ? dialParsed : account.suggestedRead)
+    : Number.NaN;
+  const autoEligible = !!(
+    autoAllow &&
+    account &&
+    account.status !== "ESCALATED" &&
+    isPlausibleReading(account, autoCandidateRead)
+  );
 
   async function handleFix() {
     if (!account || !dialRead || !dialValid) return;
     const parsed = parseInt(dialRead, 10);
     if (isNaN(parsed) || parsed <= 0) return;
+    setAutomationUsed(false);
     setRunning(true);
     await new Promise((r) => setTimeout(r, 420));
     const res = runCobolEngine(account.id, account.tariffCode, account.previousRead, parsed, new Date("2023-10-24"));
@@ -141,8 +175,12 @@ export default function Home() {
     }]);
   }
 
-  async function handleFixWithRead(read: number) {
-    if (!account) return;
+  async function handleFixWithRead(read: number, automated = false) {
+    if (!account || !isPlausibleReading(account, read)) {
+      setAgentReply("Automation stopped: the meter reading failed the deterministic plausibility checks.");
+      return;
+    }
+    setAutomationUsed(automated);
     setRunning(true);
     await new Promise((r) => setTimeout(r, 420));
     const res = runCobolEngine(account.id, account.tariffCode, account.previousRead, read, new Date("2023-10-24"));
@@ -187,13 +225,35 @@ export default function Home() {
         for (const action of (data.actions || []) as { type: string; accountId?: string; read?: number }[]) {
           if (action.type === "rate" && action.read) {
             setDialRead(String(action.read));
-            await handleFixWithRead(action.read);
+            await handleFixWithRead(action.read, true);
           }
         }
       }
     } catch (err) {
       setAgentReply(err instanceof Error ? err.message : "Agent error");
     }
+    setAgentRunning(false);
+  }
+
+  async function handleAutoFix() {
+    if (!account || agentRunning || running) return;
+    if (!autoAllow) {
+      setAgentReply("Auto-allow is off. Use Ask for advice or enable auto-allow for eligible corrections.");
+      return;
+    }
+    if (account.status === "ESCALATED") {
+      setAgentReply("Review required: escalated cases cannot be auto-approved.");
+      return;
+    }
+    if (!isPlausibleReading(account, autoCandidateRead)) {
+      setAgentReply("Review required: enter a plausible meter reading before automation can run.");
+      return;
+    }
+
+    setAgentRunning(true);
+    setAgentReply("Eligible correction auto-approved under the meter-read rules. Running the billing calculation now.");
+    setDialRead(String(autoCandidateRead));
+    await handleFixWithRead(autoCandidateRead, true);
     setAgentRunning(false);
   }
 
@@ -208,7 +268,7 @@ export default function Home() {
   function reset() {
     setStep("search"); setAccount(null); setDialRead("");
     setResult(null); setReceiptSent(false); setParsedDial(0);
-    setAgentOpen(false); setAgentVisible(false); setAgentReply(""); setAgentRunning(false);
+    setAgentOpen(false); setAgentVisible(false); setAgentReply(""); setAgentRunning(false); setAutomationUsed(false);
   }
 
   return (
@@ -233,6 +293,25 @@ export default function Home() {
             <span><b style={{ color: "var(--text)", fontWeight: 500 }}>{sessionDays}</b> days</span>
           </div>
         )}
+        <button
+          onClick={() => setIntakeOpen(true)}
+          style={{
+            display: "flex", alignItems: "center", gap: 7,
+            background: "var(--text)", color: "#fff", border: "1px solid var(--text)",
+            borderRadius: 8, padding: "6px 11px", cursor: "pointer",
+            fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1 }}>+</span>
+          Log new issue
+          {openIntakeCount > 0 && (
+            <span style={{
+              minWidth: 17, height: 17, padding: "0 5px", borderRadius: 99,
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              background: "#fff", color: "var(--text)", fontSize: 9,
+            }}>{openIntakeCount}</span>
+          )}
+        </button>
         <button
           onClick={() => setBatchDrawerOpen(true)}
           style={{
@@ -405,7 +484,20 @@ export default function Home() {
                   <span style={{ fontSize: 12, color: "var(--dim)" }}>Disputed amount, days waiting</span>
                 </div>
                 <div className="card ledger">
-                  {openCases.length === 0 ? (
+                  {intakeRecords.filter((issue) => !issue.linkedAccountId).map((issue) => (
+                    <button key={issue.reference} onClick={() => setSelectedIntake(issue)} className="ledger-row">
+                      <span className="mono" style={{ fontSize: 10, color: "var(--blue)", overflowWrap: "anywhere" }}>{issue.reference}</span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", display: "block" }}>{issue.accountQuery}</span>
+                        <span style={{ fontSize: 12, color: "var(--blue)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>{issue.category}</span>
+                      </span>
+                      <span style={{ textAlign: "right" }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.04em", padding: "2px 7px", borderRadius: 6, display: "inline-block", background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)" }}>NEW · OPEN</span>
+                        <span style={{ display: "block", fontSize: 10, color: "var(--dim)", marginTop: 4, maxWidth: 120 }}>{issue.route}</span>
+                      </span>
+                    </button>
+                  ))}
+                  {openCases.length === 0 && openIntakeCount === 0 ? (
                     <div style={{ padding: "16px", fontSize: 13, color: "var(--muted)" }}>No open cases</div>
                   ) : openCases.map((a) => (
                     <button key={a.id} onClick={() => handleSearch(a.id)} className="ledger-row">
@@ -773,6 +865,49 @@ export default function Home() {
                 {agentOpen && (
                   <div style={{ padding: "12px 16px 16px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
 
+                    {/* Explicit automation policy — enabled for eligible, non-escalated cases only */}
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                      padding: "10px 12px", marginBottom: 12, borderRadius: 10,
+                      background: autoAllow ? "var(--green-light)" : "var(--bg)",
+                      border: `1px solid ${autoAllow ? "var(--green-mid)" : "var(--border-md)"}`,
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: autoAllow ? "var(--green)" : "var(--text)" }}>
+                          Auto-allow eligible corrections
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 2, lineHeight: 1.45 }}>
+                          Valid readings run automatically. Escalated or implausible cases stay review-only.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={autoAllow}
+                        aria-label="Auto-allow eligible corrections"
+                        onClick={() => setAutoAllow((value) => !value)}
+                        style={{
+                          width: 44, height: 24, padding: 2, borderRadius: 999, flexShrink: 0,
+                          border: "none", cursor: "pointer", transition: "background 0.15s",
+                          background: autoAllow ? "var(--green)" : "var(--border-md)",
+                          display: "flex", alignItems: "center", justifyContent: autoAllow ? "flex-end" : "flex-start",
+                        }}
+                      >
+                        <span style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+                      </button>
+                    </div>
+
+                    {autoAllow && (
+                      <div style={{
+                        fontSize: 10, fontWeight: 700, marginBottom: 10,
+                        color: autoEligible ? "var(--green)" : "var(--amber)",
+                      }}>
+                        {autoEligible
+                          ? `✓ Eligible — ${autoCandidateRead.toLocaleString()} kWh passes the automation rules`
+                          : "Review required — this case is escalated or the reading needs validation"}
+                      </div>
+                    )}
+
                     {/* Advisory chips — text output only */}
                     <div style={{ fontSize: 10, fontWeight: 700, color: "var(--dim)", letterSpacing: "0.05em", marginBottom: 6 }}>ASK</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
@@ -829,16 +964,21 @@ export default function Home() {
                       </button>
                       <div style={{ width: 1, height: 20, background: "var(--border)", flexShrink: 0 }} />
                       <button
-                        onClick={() => handleAgentRun("action", "Rate the bill using the suggested dial read, then close the case.")}
-                        disabled={agentRunning}
+                        onClick={autoAllow
+                          ? handleAutoFix
+                          : () => handleAgentRun("action", "Rate the bill using the suggested dial read, then close the case.")}
+                        disabled={agentRunning || running || (autoAllow && !autoEligible)}
                         style={{
                           padding: "7px 14px", fontSize: 12, fontWeight: 600,
-                          background: "none", color: "var(--muted)",
-                          border: "1px solid var(--border-md)", borderRadius: 8,
-                          cursor: agentRunning ? "default" : "pointer",
+                          background: autoAllow && autoEligible ? "var(--green)" : "none",
+                          color: autoAllow && autoEligible ? "#fff" : "var(--muted)",
+                          border: `1px solid ${autoAllow && autoEligible ? "var(--green)" : "var(--border-md)"}`, borderRadius: 8,
+                          cursor: agentRunning || running || (autoAllow && !autoEligible) ? "not-allowed" : "pointer",
                         }}
                       >
-                        Do it for me →
+                        {autoAllow
+                          ? (autoEligible ? "Auto-fix eligible case →" : "Review required")
+                          : "Do it for me →"}
                       </button>
                     </div>
 
@@ -869,6 +1009,7 @@ export default function Home() {
               parsedDial={parsedDial}
               receiptSent={receiptSent}
               meterRead={meterReads[account.id]}
+              automationUsed={automationUsed}
               onSendReceipt={() => setReceiptSent(true)}
               onBack={() => setStep("account")}
               onReset={reset}
@@ -880,6 +1021,26 @@ export default function Home() {
       {/* Command palette (Ctrl+K still works) */}
       {paletteOpen && (
         <PaletteModal onSelect={(a) => { setAccount(a); setStep("account"); setPaletteOpen(false); }} onClose={() => setPaletteOpen(false)} />
+      )}
+
+      {intakeOpen && (
+        <IssueIntakeModal
+          onClose={() => setIntakeOpen(false)}
+          onAccept={(record) => setIntakeRecords((records) => [record, ...records])}
+          onOpenAccount={(matchedAccount) => {
+            setAccount(matchedAccount);
+            setStep("account");
+            setIntakeOpen(false);
+          }}
+          onOpenIntake={(record) => {
+            setSelectedIntake(record);
+            setIntakeOpen(false);
+          }}
+        />
+      )}
+
+      {selectedIntake && (
+        <IntakeCaseModal issue={selectedIntake} onClose={() => setSelectedIntake(null)} />
       )}
 
       {/* Batch queue drawer */}
@@ -912,13 +1073,14 @@ function MeterHubNote({ saved, typicalQuarterlyKwh }: { saved: MeterRead; typica
 }
 
 function CalcResult({
-  account, result, parsedDial, receiptSent, meterRead, onSendReceipt, onBack, onReset,
+  account, result, parsedDial, receiptSent, meterRead, automationUsed, onSendReceipt, onBack, onReset,
 }: {
   account: AccountRecord;
   result: CobolResult;
   parsedDial: number;
   receiptSent: boolean;
   meterRead?: MeterRead;
+  automationUsed: boolean;
   onSendReceipt: () => void;
   onBack: () => void;
   onReset: () => void;
@@ -1073,6 +1235,15 @@ function CalcResult({
           className="card fade-up"
           style={{ padding: 24, borderColor: savings >= 0 ? "var(--green-mid)" : "var(--amber-mid)", borderWidth: 2 }}
         >
+          {automationUsed && (
+            <div style={{
+              marginBottom: 16, padding: "8px 12px", borderRadius: 9, textAlign: "center",
+              background: "var(--green-light)", border: "1px solid var(--green-mid)",
+              color: "var(--green)", fontSize: 11, fontWeight: 800,
+            }}>
+              ✓ Auto-approved: eligible correction passed all meter-read rules
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center", flexWrap: "wrap" }}>
             {/* Old */}
             <div style={{ textAlign: "center" }}>
@@ -2197,6 +2368,270 @@ function PaletteModal({ onSelect, onClose }: { onSelect: (a: AccountRecord) => v
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Newly created open case ────────────────────────────────────────
+function IntakeCaseModal({ issue, onClose }: { issue: IntakeRecord; onClose: () => void }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const rows = [
+    ["Reference", issue.reference],
+    ["Customer / account", issue.accountQuery],
+    ["Category", issue.category],
+    ["Channel", issue.channel],
+    ["Customer impact", issue.impact],
+    ["Assigned route", issue.route],
+    ...(issue.meterRead ? [["Meter reading", `${issue.meterRead} kWh`]] : []),
+  ];
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label={`Open case ${issue.reference}`} style={{ position: "fixed", inset: 0, zIndex: 65, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(28,20,16,0.55)", backdropFilter: "blur(5px)" }} />
+      <div className="card" style={{ position: "relative", width: "100%", maxWidth: 560, borderRadius: 16, overflow: "hidden", boxShadow: "0 24px 70px rgba(28,20,16,0.28)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: "17px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-start", gap: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", padding: "3px 7px", borderRadius: 6, background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)" }}>OPEN</span>
+              <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)" }}>{issue.reference}</span>
+            </div>
+            <div style={{ fontSize: 19, fontWeight: 700, color: "var(--text)", marginTop: 7 }}>{issue.category}</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Created from {issue.channel.toLowerCase()} intake · awaiting owner action</div>
+          </div>
+          <button onClick={onClose} aria-label="Close open case" style={{ border: 0, background: "var(--hint)", color: "var(--muted)", width: 29, height: 29, borderRadius: 8, cursor: "pointer", fontSize: 17 }}>×</button>
+        </div>
+        <div style={{ padding: 20 }}>
+          <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+            {rows.map(([label, value], index) => (
+              <div key={label} style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: 16, padding: "9px 12px", borderTop: index ? "1px solid var(--border)" : 0, fontSize: 12 }}>
+                <span style={{ color: "var(--dim)" }}>{label}</span>
+                <span style={{ color: "var(--text)", fontWeight: 700 }}>{value}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: "var(--dim)", marginBottom: 6 }}>CUSTOMER DESCRIPTION</div>
+            <div style={{ padding: "12px 14px", borderRadius: 9, background: "var(--hint)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 13, lineHeight: 1.6 }}>{issue.summary}</div>
+          </div>
+          <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 9, background: "var(--blue-light)", border: "1px solid var(--blue-mid)", fontSize: 11, color: "var(--muted)" }}>
+            <b style={{ color: "var(--text)" }}>Next action:</b> {issue.impact === "Standard" ? `Assigned to ${issue.route} for assessment.` : "Priority owner review required before any automated action."}
+          </div>
+          <button onClick={onClose} style={{ width: "100%", marginTop: 16, border: 0, borderRadius: 9, padding: "11px 14px", background: "var(--text)", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Back to open cases</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Omnichannel issue intake ───────────────────────────────────────
+function IssueIntakeModal({ onClose, onAccept, onOpenAccount, onOpenIntake }: {
+  onClose: () => void;
+  onAccept: (record: IntakeRecord) => void;
+  onOpenAccount: (account: AccountRecord) => void;
+  onOpenIntake: (record: IntakeRecord) => void;
+}) {
+  const [accountQuery, setAccountQuery] = useState("");
+  const [channel, setChannel] = useState("Phone");
+  const [category, setCategory] = useState("Estimated meter read");
+  const [impact, setImpact] = useState("Standard");
+  const [summary, setSummary] = useState("");
+  const [meterRead, setMeterRead] = useState("");
+  const [createSeparate, setCreateSeparate] = useState(false);
+  const [error, setError] = useState("");
+  const [accepted, setAccepted] = useState<(IntakeRecord & { status: string; detail: string }) | null>(null);
+  const accountInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    accountInput.current?.focus();
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const matchedAccount = accountQuery.trim().length >= 3 ? findAccount(accountQuery) : undefined;
+  const meterRelated = category === "Estimated meter read" || category === "Incorrect meter reading";
+  const highRisk = impact !== "Standard";
+
+  function routeForIssue() {
+    if (highRisk) return "Priority human review";
+    if (meterRelated) return "Meter-to-bill fast lane";
+    if (category === "Incorrect bill or tariff") return "Billing specialist queue";
+    if (category === "Supply outage") return "Network operations";
+    if (category === "Payment or affordability") return "Customer support team";
+    return "General complaints triage";
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!accountQuery.trim() || !summary.trim()) {
+      setError("Enter an account or customer reference and a short issue summary.");
+      return;
+    }
+
+    const linked = !!matchedAccount && !createSeparate;
+    const route = linked ? "Existing case owner" : routeForIssue();
+    const status = linked ? "Repeat contact linked" : highRisk ? "Accepted · review required" : "Accepted · triaged";
+    const reference = linked
+      ? `CNT-${matchedAccount.id}-${Date.now().toString(36).toUpperCase().slice(-4)}`
+      : `NW-${Date.now().toString(36).toUpperCase().slice(-7)}`;
+    const record: IntakeRecord = {
+      reference,
+      accountQuery: accountQuery.trim(),
+      category,
+      channel,
+      route,
+      status,
+      summary: summary.trim(),
+      impact,
+      meterRead: meterRead || undefined,
+      linkedAccountId: linked ? matchedAccount.id : undefined,
+      createdAt: Date.now(),
+    };
+
+    onAccept(record);
+    setAccepted({
+      ...record,
+      detail: linked
+        ? `No duplicate complaint created. This ${channel.toLowerCase()} contact was added to ${matchedAccount.id}.`
+        : highRisk
+          ? "Automation is paused because the customer needs priority handling."
+          : meterRelated && meterRead
+            ? "Meter evidence captured. The case is ready for deterministic validation and billing assessment."
+            : "The issue has a single reference and is ready for the assigned team.",
+    });
+    setError("");
+  }
+
+  const fieldStyle = {
+    width: "100%", border: "1px solid var(--border-md)", borderRadius: 8,
+    padding: "9px 10px", background: "var(--surface)", color: "var(--text)",
+    fontSize: 13, outline: "none",
+  } as const;
+  const labelStyle = { display: "block", fontSize: 11, fontWeight: 700, color: "var(--muted)", marginBottom: 5 } as const;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Log a new customer issue"
+      style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={onClose}
+    >
+      <div style={{ position: "absolute", inset: 0, background: "rgba(28,20,16,0.55)", backdropFilter: "blur(5px)" }} />
+      <div
+        className="card"
+        style={{ position: "relative", width: "100%", maxWidth: 620, maxHeight: "90vh", overflowY: "auto", borderRadius: 16, boxShadow: "0 24px 70px rgba(28,20,16,0.28)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ padding: "17px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-start", gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Log a new issue</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>One intake point for phone, web and email complaints.</div>
+          </div>
+          <button onClick={onClose} aria-label="Close issue intake" style={{ border: 0, background: "var(--hint)", color: "var(--muted)", width: 29, height: 29, borderRadius: 8, cursor: "pointer", fontSize: 17 }}>×</button>
+        </div>
+
+        {accepted ? (
+          <div style={{ padding: 24 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 99, background: "var(--hold-light)", color: "var(--hold)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 21, fontWeight: 800, marginBottom: 14 }}>✓</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)" }}>{accepted.status}</div>
+            <div className="mono" style={{ marginTop: 6, color: "var(--blue)", fontSize: 13, fontWeight: 700 }}>{accepted.reference}</div>
+            <p style={{ marginTop: 12, color: "var(--muted)", lineHeight: 1.6 }}>{accepted.detail}</p>
+            <div style={{ marginTop: 18, border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+              {[
+                ["Category", accepted.category],
+                ["Route", accepted.route],
+                ["Response target", highRisk ? "Immediate review" : "Within 2 business days"],
+              ].map(([label, value]) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "10px 12px", borderBottom: label === "Response target" ? 0 : "1px solid var(--border)", fontSize: 12 }}>
+                  <span style={{ color: "var(--dim)" }}>{label}</span>
+                  <span style={{ color: "var(--text)", fontWeight: 700, textAlign: "right" }}>{value}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+              {accepted.linkedAccountId && matchedAccount && (
+                <button onClick={() => onOpenAccount(matchedAccount)} style={{ flex: 1, border: 0, borderRadius: 9, padding: "11px 14px", background: "var(--blue)", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Open existing case</button>
+              )}
+              {!accepted.linkedAccountId && (
+                <button onClick={() => onOpenIntake(accepted)} style={{ flex: 1, border: 0, borderRadius: 9, padding: "11px 14px", background: "var(--blue)", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Open new case</button>
+              )}
+              <button onClick={onClose} style={{ flex: 1, border: "1px solid var(--border-md)", borderRadius: 9, padding: "11px 14px", background: "var(--surface)", color: "var(--text)", fontWeight: 700, cursor: "pointer" }}>Back to open cases</button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={submit} style={{ padding: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 0.7fr", gap: 12 }}>
+              <label>
+                <span style={labelStyle}>ACCOUNT ID, NAME OR CUSTOMER REFERENCE</span>
+                <input ref={accountInput} value={accountQuery} onChange={(e) => { setAccountQuery(e.target.value); setCreateSeparate(false); setError(""); }} placeholder="e.g. DUN-9021 or Margaret Holloway" style={fieldStyle} />
+              </label>
+              <label>
+                <span style={labelStyle}>CHANNEL</span>
+                <select value={channel} onChange={(e) => setChannel(e.target.value)} style={fieldStyle}>
+                  <option>Phone</option><option>Web</option><option>Email</option><option>Letter</option><option>Regulator referral</option>
+                </select>
+              </label>
+            </div>
+
+            {matchedAccount && (
+              <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, background: "var(--amber-light)", border: "1px solid var(--amber-mid)" }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)" }}>Potential duplicate found · {matchedAccount.id}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3, lineHeight: 1.5 }}>
+                  {matchedAccount.name} already has an open case ({matchedAccount.openDays} days, {matchedAccount.callbackCount} prior contacts). This intake will be linked by default.
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, fontSize: 11, color: "var(--muted)", cursor: "pointer" }}>
+                  <input type="checkbox" checked={createSeparate} onChange={(e) => setCreateSeparate(e.target.checked)} />
+                  This is a separate issue—create a new complaint
+                </label>
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+              <label>
+                <span style={labelStyle}>ISSUE TYPE</span>
+                <select value={category} onChange={(e) => setCategory(e.target.value)} style={fieldStyle}>
+                  <option>Estimated meter read</option><option>Incorrect meter reading</option><option>Incorrect bill or tariff</option><option>Supply outage</option><option>Payment or affordability</option><option>Other complaint</option>
+                </select>
+              </label>
+              <label>
+                <span style={labelStyle}>CUSTOMER IMPACT</span>
+                <select value={impact} onChange={(e) => setImpact(e.target.value)} style={fieldStyle}>
+                  <option>Standard</option><option>Vulnerable customer</option><option>Legal or regulator escalation</option>
+                </select>
+              </label>
+            </div>
+
+            {meterRelated && (
+              <label style={{ display: "block", marginTop: 12 }}>
+                <span style={labelStyle}>CUSTOMER-PROVIDED METER READ <span style={{ fontWeight: 500 }}>(optional)</span></span>
+                <input type="number" value={meterRead} onChange={(e) => setMeterRead(e.target.value)} placeholder="Capture evidence now to accelerate validation" style={fieldStyle} />
+              </label>
+            )}
+
+            <label style={{ display: "block", marginTop: 12 }}>
+              <span style={labelStyle}>WHAT HAPPENED?</span>
+              <textarea value={summary} onChange={(e) => { setSummary(e.target.value); setError(""); }} rows={4} placeholder="Use the customer's words. Include the disputed amount, relevant dates and the outcome they want." style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.5 }} />
+            </label>
+
+            <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 9, background: highRisk ? "var(--amber-light)" : "var(--blue-light)", border: `1px solid ${highRisk ? "var(--amber-mid)" : "var(--blue-mid)"}`, fontSize: 11, color: "var(--muted)" }}>
+              <b style={{ color: "var(--text)" }}>Proposed route:</b> {matchedAccount && !createSeparate ? "Link to the existing case owner" : routeForIssue()}. {highRisk ? "Human review is mandatory." : meterRelated ? "Eligible cases continue to evidence and plausibility checks before any correction." : "No automated financial action will be taken."}
+            </div>
+
+            {error && <div role="alert" style={{ marginTop: 10, fontSize: 12, color: "var(--red)", fontWeight: 700 }}>{error}</div>}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+              <button type="button" onClick={onClose} style={{ border: "1px solid var(--border-md)", borderRadius: 9, padding: "10px 15px", background: "var(--surface)", color: "var(--muted)", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+              <button type="submit" style={{ border: 0, borderRadius: 9, padding: "10px 16px", background: "var(--blue)", color: "#fff", fontWeight: 700, cursor: "pointer" }}>{matchedAccount && !createSeparate ? "Link contact" : "Accept and triage"}</button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
