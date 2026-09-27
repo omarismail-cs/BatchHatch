@@ -37,6 +37,7 @@ export default function Home() {
   const [sessionCorrected, setSessionCorrected] = useState(0);
   const [sessionDays, setSessionDays] = useState(0);
   const [heldAccounts, setHeldAccounts] = useState<Set<string>>(new Set());
+  const [clearedIds, setClearedIds] = useState<Set<string>>(new Set());
   const [batchQueue, setBatchQueue] = useState<QueuedRecord[]>([]);
   const [batchDrawerOpen, setBatchDrawerOpen] = useState(false);
   const billHeld = !!(account && heldAccounts.has(account.id));
@@ -81,7 +82,9 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, [openPalette]);
 
-  const suggestions = query.trim() ? searchAccounts(query).slice(0, 6) : [];
+  const suggestions = query.trim()
+    ? searchAccounts(query).filter((a) => !clearedIds.has(a.id)).slice(0, 6)
+    : [];
   const showSuggest = suggestOpen && query.trim().length > 0;
 
   function handleSearch(q: string) {
@@ -120,6 +123,7 @@ export default function Home() {
     setSessionBills((p) => p + 1);
     setSessionCorrected((p) => p + Math.max(0, account.estimatedBill - res.total));
     setSessionDays((p) => p + account.openDays);
+    setClearedIds((prev) => new Set(prev).add(account.id));
     const acc = account;
     setBatchQueue((q) => [...q, {
       id: `${acc.id}-${Date.now()}`,
@@ -142,6 +146,7 @@ export default function Home() {
     setSessionBills((p) => p + 1);
     setSessionCorrected((p) => p + Math.max(0, account.estimatedBill - res.total));
     setSessionDays((p) => p + account.openDays);
+    setClearedIds((prev) => new Set(prev).add(account.id));
     const acc = account;
     setBatchQueue((q) => [...q, {
       id: `${acc.id}-${Date.now()}`,
@@ -181,6 +186,14 @@ export default function Home() {
     }
     setAgentRunning(false);
   }
+
+  const openCases = [
+    { id: "DUN-9021", name: "Margaret Holloway", bill: 842.10, days: 41, tag: "Threatening escalation", region: "Dunmoor" },
+    { id: "DUN-3345", name: "Edith Cargill",     bill: 723.50, days: 58, tag: "Solicitor involved", region: "Dunmoor" },
+    { id: "BAR-4401", name: "James Whitmore",    bill: 612.40, days: 28, tag: "", region: "Barrowdale" },
+    { id: "DUN-7782", name: "Patricia Okafor",   bill: 524.80, days: 19, tag: "", region: "Dunmoor" },
+    { id: "BAR-2209", name: "Robert Finch",      bill: 388.60, days: 12, tag: "", region: "Barrowdale" },
+  ].filter((a) => !clearedIds.has(a.id));
 
   function reset() {
     setStep("search"); setAccount(null); setDialRead("");
@@ -382,13 +395,9 @@ export default function Home() {
                   <span style={{ fontSize: 12, color: "var(--dim)" }}>Disputed amount, days waiting</span>
                 </div>
                 <div className="card ledger">
-                  {[
-                    { id: "DUN-9021", name: "Margaret Holloway", bill: 842.10, days: 41, tag: "Threatening escalation", region: "Dunmoor" },
-                    { id: "DUN-3345", name: "Edith Cargill",     bill: 723.50, days: 58, tag: "Solicitor involved", region: "Dunmoor" },
-                    { id: "BAR-4401", name: "James Whitmore",    bill: 612.40, days: 28, tag: "", region: "Barrowdale" },
-                    { id: "DUN-7782", name: "Patricia Okafor",   bill: 524.80, days: 19, tag: "", region: "Dunmoor" },
-                    { id: "BAR-2209", name: "Robert Finch",      bill: 388.60, days: 12, tag: "", region: "Barrowdale" },
-                  ].map((a) => (
+                  {openCases.length === 0 ? (
+                    <div style={{ padding: "16px", fontSize: 13, color: "var(--muted)" }}>No open cases</div>
+                  ) : openCases.map((a) => (
                     <button key={a.id} onClick={() => handleSearch(a.id)} className="ledger-row">
                       <span className="mono" style={{ fontSize: 11, color: "var(--dim)" }}>{a.id}</span>
                       <span style={{ minWidth: 0 }}>
