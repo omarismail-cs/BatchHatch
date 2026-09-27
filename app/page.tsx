@@ -388,12 +388,15 @@ export default function Home() {
 
           {/* ── STEP 1: Search ──────────────────────────────── */}
           {step === "search" && (
-            <div className="fade-up">
+            <div className="fade-up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "start" }}>
+
+              {/* ── LEFT: headline + search ─── */}
+              <div>
               <div style={{ marginBottom: 24 }}>
                 <h1 style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.03em", color: "var(--text)", lineHeight: 1.2, marginBottom: 8 }}>
                   Fix the bill while they are still on the phone.
                 </h1>
-                <p style={{ color: "var(--muted)", fontSize: 14, maxWidth: "52ch", margin: 0, lineHeight: 1.55 }}>
+                <p style={{ color: "var(--muted)", fontSize: 14, margin: 0, lineHeight: 1.55 }}>
                   Pull up the account, take the dial reading, and the 1998 rating engine issues the corrected bill before the call ends.
                 </p>
               </div>
@@ -514,6 +517,10 @@ export default function Home() {
                 </div>
               )}
 
+              </div>{/* end LEFT col */}
+
+              {/* ── RIGHT: case ledger ─── */}
+              <div>
               {/* Quick-load accounts */}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", width: "100%", minWidth: 0, marginBottom: 8 }}>
                 {notice && (
@@ -609,12 +616,17 @@ export default function Home() {
                   })}
                 </div>
               </div>
+              </div>{/* end RIGHT col */}
+
             </div>
           )}
 
           {/* ── STEP 2: Account loaded ──────────────────────── */}
           {step === "account" && account && (
-            <div className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="fade-up" style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: 20, alignItems: "start" }}>
+
+              {/* ── LEFT: who + what they owe ─── */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
               {/* Outage alert — only when account is in an active incident zone */}
               {account.outage && (
@@ -675,6 +687,11 @@ export default function Home() {
                   </div>
                 )}
               </div>
+
+              </div>{/* end LEFT col */}
+
+              {/* ── RIGHT: read + fix + AI ─── */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
               {/* The fix */}
               <div className="card" style={{ padding: 20 }}>
@@ -1086,6 +1103,8 @@ export default function Home() {
               </div>
               )}
 
+              </div>{/* end RIGHT col */}
+
             </div>
           )}
 
@@ -1242,7 +1261,10 @@ function CalcResult({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+
+      {/* ── LEFT col: COBOL terminal (always visible) ── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, position: "sticky", top: 16 }}>
 
       {/* Calc terminal */}
       <div className="card fade-up" style={{ overflow: "hidden" }}>
@@ -1302,6 +1324,10 @@ function CalcResult({
           {!done && <span style={{ color: "#00FF41", animation: "blink 1s step-end infinite" }}>█</span>}
         </div>
       </div>
+      </div>{/* end LEFT col */}
+
+      {/* ── RIGHT col: verdict + shockwave + actions + ACW + receipt ── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
       {/* Bill change — shown once calc is done */}
       {done && (
@@ -1529,6 +1555,8 @@ function CalcResult({
       {done && receiptSent && (
         <BillAdjustmentReceipt account={account} result={result} parsedDial={parsedDial} savings={savings} />
       )}
+
+      </div>{/* end RIGHT col */}
     </div>
   );
 }
