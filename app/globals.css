@@ -28,6 +28,12 @@
   --amber:       #c2410c;
   --amber-light: #fff1e6;
   --amber-mid:   #f3c7a6;
+
+  /* Bill hold only. The rest of the screen stays on the orange. */
+  --hold:        #0E9B52;
+  --hold-dark:   #0A7A40;
+  --hold-light:  #EDFBF3;
+  --hold-mid:    #A7EFC5;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
