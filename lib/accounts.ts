@@ -1,3 +1,5 @@
+import { INBOUND_CASES } from "@/lib/inbound";
+
 export type ComplaintStatus =
   | "PENDING_OVERNIGHT_BATCH"
   | "VERIFIED_CLEARED"
@@ -183,9 +185,11 @@ export const ACCOUNTS: AccountRecord[] = [
   },
 ];
 
+const DIRECTORY = [...ACCOUNTS, ...INBOUND_CASES];
+
 export function findAccount(query: string): AccountRecord | undefined {
   const q = query.trim().toUpperCase();
-  return ACCOUNTS.find(
+  return DIRECTORY.find(
     (a) =>
       a.id.toUpperCase() === q ||
       a.name.toUpperCase().includes(q) ||
@@ -196,7 +200,7 @@ export function findAccount(query: string): AccountRecord | undefined {
 export function searchAccounts(query: string): AccountRecord[] {
   if (!query.trim()) return ACCOUNTS;
   const q = query.trim().toUpperCase();
-  return ACCOUNTS.filter(
+  return DIRECTORY.filter(
     (a) =>
       a.id.toUpperCase().includes(q) ||
       a.name.toUpperCase().includes(q) ||

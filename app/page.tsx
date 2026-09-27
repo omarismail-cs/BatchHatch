@@ -7,6 +7,7 @@ import { runCobolEngine, CobolResult } from "@/lib/billing";
 import { findAccount, searchAccounts, AccountRecord } from "@/lib/accounts";
 import { UNIT_COSTS } from "@/lib/data";
 import { loadMeterReads, saveMeterRead, METERHUB_READ_DATE, MeterRead, nextDialEstimate, formatMeterDate } from "@/lib/meterhub";
+import { INBOUND_ROWS, InboundRow } from "@/lib/inbound";
 
 // â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type Step = "search" | "account" | "result";
@@ -64,28 +65,40 @@ export default function Home() {
   const [intakeRecords, setIntakeRecords] = useState<IntakeRecord[]>([]);
   const [selectedIntake, setSelectedIntake] = useState<IntakeRecord | null>(null);
   const openIntakeCount = intakeRecords.filter((issue) => !issue.linkedAccountId).length;
+  const [waiting, setWaiting] = useState<InboundRow[]>(INBOUND_ROWS);
+  const [arrived, setArrived] = useState<InboundRow[]>([]);
+  const [notice, setNotice] = useState("");
+  const [deskLog, setDeskLog] = useState<{ id: string; action: "HOLD" | "RATE"; name: string; detail: string }[]>([]);
+  const [deskRunning, setDeskRunning] = useState(false);
   const billHeld = !!(account && heldAccounts.has(account.id));
-  function toggleHold() {
-    if (!account) return;
-    const isHeld = heldAccounts.has(account.id);
+  function placeHold(acc: { id: string; name: string }) {
     setHeldAccounts((prev) => {
       const next = new Set(prev);
-      if (next.has(account.id)) next.delete(account.id);
-      else next.add(account.id);
+      next.add(acc.id);
       return next;
     });
-    if (!isHeld) {
-      // Placing on hold â€” generate a HOLD record for the batch queue
-      const holdLine = `HLD${new Date("2023-10-24").toISOString().slice(0,10).replace(/-/g,"")}${account.id.padEnd(12)}${"SUSPENDED-PENDING-VERIFIED-READ".padEnd(40)}HOLD`.slice(0, 80);
-      setBatchQueue((q) => [...q, {
-        id: `${account.id}-HOLD-${Date.now()}`,
-        accountId: account.id, accountName: account.name,
+    setBatchQueue((q) => {
+      if (q.some((r) => r.accountId === acc.id && r.type === "HOLD")) return q;
+      const holdLine = `HLD${new Date("2023-10-24").toISOString().slice(0, 10).replace(/-/g, "")}${acc.id.padEnd(12)}${"SUSPENDED-PENDING-VERIFIED-READ".padEnd(40)}HOLD`.slice(0, 80);
+      return [...q, {
+        id: `${acc.id}-HOLD-${Date.now()}`,
+        accountId: acc.id, accountName: acc.name,
         batchLine: holdLine, type: "HOLD", addedAt: Date.now(),
-      }]);
-    } else {
-      // Releasing hold â€” remove that account's HOLD record from queue
-      setBatchQueue((q) => q.filter((r) => !(r.accountId === account.id && r.type === "HOLD")));
-    }
+      }];
+    });
+  }
+  function releaseHold(accountId: string) {
+    setHeldAccounts((prev) => {
+      const next = new Set(prev);
+      next.delete(accountId);
+      return next;
+    });
+    setBatchQueue((q) => q.filter((r) => !(r.accountId === accountId && r.type === "HOLD")));
+  }
+  function toggleHold() {
+    if (!account) return;
+    if (heldAccounts.has(account.id)) releaseHold(account.id);
+    else placeHold(account);
   }
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentVisible, setAgentVisible] = useState(false);
@@ -100,6 +113,23 @@ export default function Home() {
   const openPalette = useCallback(() => setPaletteOpen(true), []);
 
   useEffect(() => { setMeterReads(loadMeterReads()); }, []);
+
+  useEffect(() => {
+    if (step !== "search" || waiting.length === 0 || deskRunning) return;
+    const next = waiting[0];
+    const timer = window.setTimeout(() => {
+      setArrived((rows) => (rows.some((row) => row.id === next.id) ? rows : [...rows, next]));
+      setWaiting((queue) => queue.filter((row) => row.id !== next.id));
+      setNotice(`${next.name} · $${next.bill.toFixed(2)} just opened`);
+    }, 9000);
+    return () => window.clearTimeout(timer);
+  }, [step, waiting, deskRunning]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(""), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   function rememberRead(accountId: string, read: number) {
     setMeterReads(saveMeterRead({ accountId, read, date: METERHUB_READ_DATE }));
@@ -148,31 +178,40 @@ export default function Home() {
     isPlausibleReading(account, autoCandidateRead)
   );
 
-  async function handleFix() {
-    if (!account || !dialRead || !dialValid) return;
-    const parsed = parseInt(dialRead, 10);
-    if (isNaN(parsed) || parsed <= 0) return;
-    setAutomationUsed(false);
-    setRunning(true);
-    await new Promise((r) => setTimeout(r, 420));
-    const res = runCobolEngine(account.id, account.tariffCode, account.previousRead, parsed, new Date("2023-10-24"));
-    setParsedDial(parsed);
-    setResult(res);
-    setRunning(false);
-    setStep("result");
+  async function rateAccount(acc: AccountRecord, read: number, quiet = false) {
+    if (!quiet) setRunning(true);
+    if (!quiet) await new Promise((r) => setTimeout(r, 420));
+    const res = runCobolEngine(acc.id, acc.tariffCode, acc.previousRead, read, new Date("2023-10-24"));
+    if (!quiet) {
+      setAccount(acc);
+      setDialRead(String(read));
+      setParsedDial(read);
+      setResult(res);
+      setRunning(false);
+      setStep("result");
+    }
     setRebillsSaved((p) => p + UNIT_COSTS.manualBillCorrection);
     setCallbacksSaved((p) => p + UNIT_COSTS.inboundCall);
     setSessionBills((p) => p + 1);
-    setSessionCorrected((p) => p + Math.max(0, account.estimatedBill - res.total));
-    setSessionDays((p) => p + account.openDays);
-    setClearedIds((prev) => new Set(prev).add(account.id));
-    rememberRead(account.id, parsed);
-    const acc = account;
+    setSessionCorrected((p) => p + Math.max(0, acc.estimatedBill - res.total));
+    setSessionDays((p) => p + acc.openDays);
+    setClearedIds((prev) => new Set(prev).add(acc.id));
+    rememberRead(acc.id, read);
+    releaseHold(acc.id);
     setBatchQueue((q) => [...q, {
       id: `${acc.id}-${Date.now()}`,
       accountId: acc.id, accountName: acc.name,
       batchLine: res.batchLine, type: "ADJ", addedAt: Date.now(),
     }]);
+    return res;
+  }
+
+  async function handleFix() {
+    if (!account || !dialRead || !dialValid) return;
+    const parsed = parseInt(dialRead, 10);
+    if (isNaN(parsed) || parsed <= 0) return;
+    setAutomationUsed(false);
+    await rateAccount(account, parsed, false);
   }
 
   async function handleFixWithRead(read: number, automated = false) {
@@ -181,26 +220,7 @@ export default function Home() {
       return;
     }
     setAutomationUsed(automated);
-    setRunning(true);
-    await new Promise((r) => setTimeout(r, 420));
-    const res = runCobolEngine(account.id, account.tariffCode, account.previousRead, read, new Date("2023-10-24"));
-    setParsedDial(read);
-    setResult(res);
-    setRunning(false);
-    setStep("result");
-    setRebillsSaved((p) => p + UNIT_COSTS.manualBillCorrection);
-    setCallbacksSaved((p) => p + UNIT_COSTS.inboundCall);
-    setSessionBills((p) => p + 1);
-    setSessionCorrected((p) => p + Math.max(0, account.estimatedBill - res.total));
-    setSessionDays((p) => p + account.openDays);
-    setClearedIds((prev) => new Set(prev).add(account.id));
-    rememberRead(account.id, read);
-    const acc = account;
-    setBatchQueue((q) => [...q, {
-      id: `${acc.id}-${Date.now()}`,
-      accountId: acc.id, accountName: acc.name,
-      batchLine: res.batchLine, type: "ADJ", addedAt: Date.now(),
-    }]);
+    await rateAccount(account, read, false);
   }
 
   async function handleAgentRun(mode: "advisory" | "action" = "advisory", overrideMessage?: string) {
@@ -223,6 +243,10 @@ export default function Home() {
       setAgentReply(data.reply || "");
       if (mode === "action") {
         for (const action of (data.actions || []) as { type: string; accountId?: string; read?: number }[]) {
+          const target = action.accountId ? findAccount(action.accountId) : account;
+          if (!target) continue;
+          if (action.type === "hold") placeHold(target);
+          if (action.type === "close") setClearedIds((prev) => new Set(prev).add(target.id));
           if (action.type === "rate" && action.read) {
             setDialRead(String(action.read));
             await handleFixWithRead(action.read, true);
@@ -263,12 +287,33 @@ export default function Home() {
     { id: "BAR-4401", name: "James Whitmore",    bill: 612.40, days: 28, tag: "", region: "Barrowdale" },
     { id: "DUN-7782", name: "Patricia Okafor",   bill: 524.80, days: 19, tag: "", region: "Dunmoor" },
     { id: "BAR-2209", name: "Robert Finch",      bill: 388.60, days: 12, tag: "", region: "Barrowdale" },
-  ];
-  // Active cases first, cleared cases sink to the bottom greyed out
+    ...arrived,
+  ].filter((a, i, all) => all.findIndex((row) => row.id === a.id) === i);
+  const activeCases = allCases.filter((a) => !clearedIds.has(a.id));
   const openCases = [
-    ...allCases.filter((a) => !clearedIds.has(a.id)),
-    ...allCases.filter((a) =>  clearedIds.has(a.id)),
+    ...activeCases,
+    ...allCases.filter((a) => clearedIds.has(a.id)),
   ];
+
+  async function workQueue() {
+    if (deskRunning || activeCases.length === 0) return;
+    setDeskRunning(true);
+    setDeskLog([]);
+    for (const row of activeCases) {
+      const full = findAccount(row.id);
+      if (!full) continue;
+      const escalate = full.status === "ESCALATED" || /solicitor|regulator|escalat/i.test(row.tag);
+      if (escalate) {
+        placeHold(full);
+        setDeskLog((lines) => [...lines, { id: full.id, action: "HOLD", name: full.name, detail: row.tag || "Escalated" }]);
+      } else {
+        const res = await rateAccount(full, full.suggestedRead, true);
+        setDeskLog((lines) => [...lines, { id: full.id, action: "RATE", name: full.name, detail: `${full.suggestedRead.toLocaleString()} → $${res.total.toFixed(2)}` }]);
+      }
+      await new Promise((r) => setTimeout(r, 420));
+    }
+    setDeskRunning(false);
+  }
 
   function reset() {
     setStep("search"); setAccount(null); setDialRead("");
@@ -483,23 +528,70 @@ export default function Home() {
               )}
 
               {/* Quick-load accounts */}
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>Open cases</span>
-                  <span style={{ fontSize: 12, color: "var(--dim)" }}>Disputed amount, days waiting</span>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", width: "100%", minWidth: 0, marginBottom: 8 }}>
+                {notice && (
+                  <div style={{ marginBottom: 10, fontSize: 13, color: "var(--text)" }}>
+                    New complaint — {notice}
+                  </div>
+                )}
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 12, width: "100%", marginBottom: 8 }}>
+                  <span style={{ minWidth: 0, fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
+                    Open cases{waiting.length > 0 ? ` · ${waiting.length} still coming in` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={workQueue}
+                    disabled={deskRunning || activeCases.length === 0}
+                    style={{
+                      flexShrink: 0, whiteSpace: "nowrap",
+                      background: deskRunning || activeCases.length === 0 ? "var(--border)" : "var(--blue)",
+                      color: deskRunning || activeCases.length === 0 ? "var(--dim)" : "#fff",
+                      border: "none", borderRadius: 10, padding: "8px 12px",
+                      fontSize: 13, fontWeight: 500, cursor: deskRunning || activeCases.length === 0 ? "default" : "pointer",
+                    }}
+                  >
+                    {deskRunning ? "Working the queue…" : "Work the queue"}
+                  </button>
                 </div>
+                {deskLog.length > 0 && (
+                  <div className="card" style={{ marginBottom: 10, width: "100%", overflow: "hidden" }}>
+                    {deskLog.map((line, i) => (
+                      <div
+                        key={line.id}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "52px minmax(0, 1fr) auto",
+                          columnGap: 12,
+                          alignItems: "baseline",
+                          padding: "8px 14px",
+                          borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                          fontSize: 13,
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        <span style={{ color: line.action === "HOLD" ? "var(--hold)" : "var(--muted)", fontWeight: 500 }}>
+                          {line.action === "HOLD" ? "Held" : "Rated"}
+                        </span>
+                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontWeight: 500 }}>{line.name}</span>
+                        <span style={{ color: "var(--dim)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{line.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="card ledger">
                   {intakeRecords.filter((issue) => !issue.linkedAccountId).map((issue) => (
-                    <button key={issue.reference} onClick={() => setSelectedIntake(issue)} className="ledger-row">
-                      <span className="mono" style={{ fontSize: 10, color: "var(--blue)", overflowWrap: "anywhere" }}>{issue.reference}</span>
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", display: "block" }}>{issue.accountQuery}</span>
-                        <span style={{ fontSize: 12, color: "var(--blue)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>{issue.category}</span>
-                      </span>
-                      <span style={{ textAlign: "right" }}>
-                        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.04em", padding: "2px 7px", borderRadius: 6, display: "inline-block", background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)" }}>NEW Â· OPEN</span>
-                        <span style={{ display: "block", fontSize: 10, color: "var(--dim)", marginTop: 4, maxWidth: 120 }}>{issue.route}</span>
-                      </span>
+                    <button key={issue.reference} onClick={() => setSelectedIntake(issue)} className="ledger-row" type="button">
+                      <div className="ledger-row-grid" style={{ display: "grid", gridTemplateColumns: "76px minmax(0, 1fr) auto", gap: 10, alignItems: "center", width: "100%", padding: "8px 14px" }}>
+                        <span className="mono" style={{ fontSize: 10, color: "var(--blue)", overflowWrap: "anywhere" }}>{issue.reference}</span>
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", display: "block" }}>{issue.accountQuery}</span>
+                          <span style={{ fontSize: 12, color: "var(--blue)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>{issue.category}</span>
+                        </span>
+                        <span style={{ textAlign: "right" }}>
+                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.04em", padding: "2px 7px", borderRadius: 6, display: "inline-block", background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)" }}>NEW · OPEN</span>
+                          <span style={{ display: "block", fontSize: 10, color: "var(--dim)", marginTop: 4, maxWidth: 120 }}>{issue.route}</span>
+                        </span>
+                      </div>
                     </button>
                   ))}
                   {openCases.length === 0 && openIntakeCount === 0 ? (
@@ -507,37 +599,49 @@ export default function Home() {
                   ) : openCases.map((a) => {
                     const cleared = clearedIds.has(a.id);
                     return (
-                      <button
-                        key={a.id}
-                        onClick={() => !cleared && handleSearch(a.id)}
-                        className="ledger-row"
-                        disabled={cleared}
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => !cleared && handleSearch(a.id)}
+                      className="ledger-row"
+                      disabled={cleared}
+                      style={{
+                        opacity: cleared ? 0.38 : 1,
+                        cursor: cleared ? "default" : "pointer",
+                        pointerEvents: cleared ? "none" : "auto",
+                      }}
+                    >
+                      <div
+                        className="ledger-row-grid"
                         style={{
-                          opacity: cleared ? 0.38 : 1,
-                          cursor: cleared ? "default" : "pointer",
-                          pointerEvents: cleared ? "none" : "auto",
-                          transition: "opacity 0.4s",
+                          display: "grid",
+                          gridTemplateColumns: "76px minmax(0, 1fr) auto",
+                          gap: 10,
+                          alignItems: "center",
+                          width: "100%",
+                          padding: "8px 14px",
                         }}
                       >
                         <span className="mono" style={{ fontSize: 11, color: "var(--dim)" }}>{a.id}</span>
-                        <span style={{ minWidth: 0 }}>
+                        <span style={{ minWidth: 0, lineHeight: 1.25 }}>
                           <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", display: "block", textDecoration: cleared ? "line-through" : "none" }}>{a.name}</span>
                           <span style={{ fontSize: 12, color: cleared ? "var(--dim)" : a.tag ? "var(--blue)" : "var(--dim)" }}>
                             {cleared ? "corrected" : (a.tag || a.region)}
                           </span>
                         </span>
-                        <span style={{ textAlign: "right" }}>
+                        <span style={{ textAlign: "right", lineHeight: 1.25 }}>
                           {heldAccounts.has(a.id) && !cleared ? (
                             <span style={{
                               fontSize: 10, fontWeight: 700, letterSpacing: "0.04em",
-                              padding: "2px 7px", borderRadius: 6, display: "inline-block", marginBottom: 4,
+                              padding: "1px 6px", borderRadius: 6, display: "inline-block", marginBottom: 2,
                               background: "var(--hold-light)", color: "var(--hold)", border: "1px solid var(--hold-mid)",
                             }}>HELD</span>
                           ) : null}
-                          <span className="figure" style={{ fontSize: 22, color: "var(--text)", display: "block", lineHeight: 1 }}>${a.bill.toFixed(2)}</span>
-                          <span style={{ fontSize: 12, color: "var(--dim)" }}>{cleared ? "âœ“ fixed" : `${a.days} days`}</span>
+                          <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text)", display: "block", fontVariantNumeric: "tabular-nums" }}>${a.bill.toFixed(2)}</span>
+                          <span style={{ fontSize: 11, color: "var(--dim)" }}>{cleared ? "fixed" : `${a.days} days`}</span>
                         </span>
-                      </button>
+                      </div>
+                    </button>
                     );
                   })}
                 </div>

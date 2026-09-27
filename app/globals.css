@@ -66,21 +66,37 @@ body {
     "Cascadia Code", "Fira Mono", "Courier New", monospace;
 }
 
-/* Ledger — one card, ruled rows */
-.ledger { padding: 0; overflow: hidden; }
-.ledger-row {
-  display: grid;
-  grid-template-columns: 84px minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
+/* Ledger — one card, ruled rows. Grid lives on an inner element because
+   display:grid on a button is ignored in some browsers and the row collapses. */
+.ledger {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   width: 100%;
-  padding: 13px 16px;
+  padding: 0;
+  overflow: hidden;
+}
+.ledger-row {
+  display: block;
+  width: 100%;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0;
   background: none;
   border: 0;
   border-top: 1px solid var(--border);
   text-align: left;
   cursor: pointer;
   color: inherit;
+}
+.ledger-row-grid {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 14px;
 }
 .ledger-row:first-child { border-top: 0; }
 .ledger-row:hover { background: var(--hint); }
