@@ -24,6 +24,7 @@ export default function Home() {
   const [sessionBills, setSessionBills] = useState(0);
   const [sessionCorrected, setSessionCorrected] = useState(0);
   const [sessionDays, setSessionDays] = useState(0);
+  const [billHeld, setBillHeld] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentQuery, setAgentQuery] = useState("Call list_backlog and rank all five cases by urgency. Use open days, callback count, status, and agent notes. Name who to deal with first and why in 2–3 sentences.");
   const [agentRunning, setAgentRunning] = useState(false);
@@ -131,7 +132,7 @@ export default function Home() {
   function reset() {
     setStep("search"); setAccount(null); setDialRead("");
     setResult(null); setReceiptSent(false); setParsedDial(0);
-    setAgentOpen(false); setAgentReply(""); setAgentRunning(false);
+    setAgentOpen(false); setAgentReply(""); setAgentRunning(false); setBillHeld(false);
   }
 
   return (
@@ -568,7 +569,53 @@ export default function Home() {
                 <div style={{ textAlign: "center", fontSize: 10, color: "var(--dim)", marginTop: 8 }}>
                   Ctrl+Enter · Aurora SYS-01 rating engine · batch record ready for 2am ingest
                 </div>
+
+                {/* Hold bill — preventive action */}
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+                  <button
+                    onClick={() => setBillHeld(true)}
+                    disabled={billHeld}
+                    style={{
+                      width: "100%", padding: "10px 16px", fontSize: 12, fontWeight: 700,
+                      background: billHeld ? "var(--bg)" : "none",
+                      color: billHeld ? "var(--green)" : "var(--muted)",
+                      border: `1px solid ${billHeld ? "var(--green-mid)" : "var(--border-md)"}`,
+                      borderRadius: 10, cursor: billHeld ? "default" : "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                    }}
+                  >
+                    {billHeld ? "✓ Bill held — won't dispatch tonight" : "Hold tonight's bill dispatch"}
+                  </button>
+                  {!billHeld && (
+                    <div style={{ fontSize: 10, color: "var(--dim)", textAlign: "center", marginTop: 5 }}>
+                      Suspends the 2am batch dispatch while you get a verified read
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Hold confirmation card */}
+              {billHeld && (
+                <div className="card fade-up" style={{
+                  padding: "16px 20px", borderColor: "var(--green-mid)", background: "var(--green-light)",
+                  display: "flex", gap: 14, alignItems: "flex-start",
+                }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 10, background: "var(--green)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontSize: 14, flexShrink: 0,
+                  }}>⏸</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "var(--green-dark)", marginBottom: 4 }}>
+                      Bill held — ${account.estimatedBill.toFixed(2)} will not dispatch tonight
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--green-dark)", lineHeight: 1.6, opacity: 0.85 }}>
+                      The 2am SYS-01 batch job will skip this account. {account.name.split(" ")[0]} won&apos;t receive
+                      the estimated bill while you get a verified dial read. Case stays open.
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ── AI Agent panel ─────────────────────────── */}
               <div className="card" style={{ padding: 0, overflow: "hidden", borderColor: "var(--blue-mid)" }}>
