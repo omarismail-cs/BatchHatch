@@ -60,15 +60,53 @@ Three checks run before Fix Bill is enabled:
 
 1. **Below previous read** — current reading cannot be lower than the last verified read. Flags dial reversal (ERR8001 in COBOL).
 2. **Zero usage** — reading equal to previous read implies no consumption was entered. Blocked.
-3. **Unrealistic usage** — if implied consumption exceeds 3× the account's typical quarterly kWh, the input is flagged but not hard-blocked (edge cases like long gaps are real). The ceiling is per-account, not a global constant.
+3. **Unrealistic usage** — if implied consumption exceeds 3× the account's typical quarterly kWh, the input is blocked with a prominent warning card. The ceiling is per-account, not a global constant.
 
-The suggested read shown in the UI is a plausibility hint based on account type and billing period — not the answer. The agent asks the customer and types what they say.
+For the unrealistic case, the warning card is intentionally strong — it shows the exact multiplier (e.g. "2.8× typical"), states the maximum plausible reading in absolute kWh, and explicitly tells the agent to ask the customer to re-read the dial. The goal is to catch misread dials (e.g. a customer reading 65,000 as 650,000) before a bad record enters the batch.
+
+The batch output therefore has a structural 0.00% rejection rate: validation is enforced UI-side, so only clean readings ever reach the COBOL engine or generate a batch record.
+
+---
+
+## Bill verdict
+
+After the engine runs, the correction panel shows a two-column verdict card:
+
+- **Estimated bill** — the original SYS-06 figure, struck through
+- **Corrected bill** — what SYS-01 calculated from the verified read
+
+The direction of the discrepancy is computed as `savings = estimatedBill − correctedBill`:
+
+- `savings > 0` — SYS-06 overestimated. Customer was overcharged. Green styling, "overestimated" sub-label.
+- `savings < 0` — SYS-06 underestimated. Customer owes more than billed. Amber styling, "underestimated" sub-label. The agent still corrects the bill — it is the honest number — but the framing changes.
+- `savings = 0` — Exact match. Uncommon in practice; means the estimate was accurate.
+
+This prevents the UI from ever showing "Overcharged bill" when the corrected bill is actually higher than the estimate.
+
+---
+
+## Receipt
+
+When a correction is confirmed, a structured bill adjustment receipt is generated. It contains:
+
+- Account ID, customer name, address, tariff code
+- Period-end read (verified on call) and previous read
+- Units consumed
+- Original bill vs corrected bill side-by-side
+- **Regulatory credit row** (if the account has an active outage): shows the Licence Condition 14B compensation amount (e.g. −$30.00) with the outage incident reference
+- **Net amount due** — corrected bill minus any regulatory credit, shown as a final unambiguous total
+- Aurora SYS-01 return code and engine execution time
+- REF code in `ADJ-{accountId}-{returnCode}-{shortHash}` format
+
+The receipt is generated in the browser at confirmation time. In production it would be dispatched via the Northwind SMS gateway and archived to CaseTrack.
 
 ---
 
 ## AI agent
 
 `app/api/agent/route.ts` is a Next.js API route that wraps Gemini 3.5 Flash Lite via Google's OpenAI-compatible endpoint.
+
+The agent panel is **hidden by default** — a small `✦ Show AI agent` link appears at the bottom of the account form. Clicking it reveals the full panel (already expanded). This keeps the interface uncluttered for agents who don't need AI assistance on a given call.
 
 The agent has four tools: `list_backlog`, `rate_bill`, `hold_bill`, `close_case`.
 
@@ -79,6 +117,8 @@ Two modes are enforced server-side:
 **Action mode** — all tools available. Used by the "Do it for me →" button. The agent selects an account, rates the bill from the suggested read, and the returned `actions` array drives the UI — fills the dial read input and fires `handleFix` programmatically.
 
 The system prompt passes full account context upfront: open days, callback count, status, agent notes, both readings, tariff code. This means advisory responses are specific to the account on screen, not generic.
+
+Four preset chips are provided (Triage queue, Why overbilled?, Escalate or close?, Call prep) which pre-fill the query textarea. Agents can also type a custom query.
 
 ---
 
@@ -95,6 +135,23 @@ The system prompt passes full account context upfront: open days, callback count
 **Session counter tracks corrected value, not just count.** The navbar counter shows bills fixed, dollars corrected, and days open closed this session. Days open is the sum of `openDays` across fixed accounts — it represents case-days removed from the queue, not future time saved.
 
 **Gemini, not OpenAI.** Google's OpenAI-compatible endpoint (`generativelanguage.googleapis.com/v1beta/openai/chat/completions`) accepts the same request format as the OpenAI SDK. This means the route needed no special client library — just `fetch`. Rate limit retries use exponential backoff (1.5s, 3s, 4.5s) for 429 responses.
+
+**Regulatory credit shown separately in receipt, not baked into corrected bill.** The COBOL engine (`lib/billing.ts`) calculates the tariff-correct total from the verified read — that is the corrected bill. The Licence Condition 14B outage credit is a separate regulatory obligation that sits on top of billing. Showing them as distinct line items (corrected bill → credit deduction → net amount due) makes the receipt auditable and matches how Northwind's billing system would represent it.
+
+---
+
+## Components
+
+| Component | Purpose |
+|---|---|
+| `components/BatchClock.tsx` | Live countdown to the next 2am batch run, shown in the navbar |
+| `components/Logo.tsx` | BatchHatch logo mark |
+| `components/CommandPalette.tsx` | Keyboard-accessible quick-search overlay (Ctrl+K) |
+| `components/AccountCard.tsx` | Account summary card used in the search results list |
+| `components/CobolTerminal.tsx` | Monospace COBOL source trace panel (shown in "Under the hood" section) |
+| `components/MetricsBar.tsx` | Session stats bar (bills fixed, $ corrected, case-days closed) |
+| `components/OriginalValueCase.tsx` | Value case summary used on the /metrics page |
+| `components/RecoveryForecast.tsx` | Queue simulation ported from Moaz's recovery model (built, not yet wired into /metrics) |
 
 ---
 
@@ -129,3 +186,4 @@ The smart meter alternative (519,000 accounts × $148/meter) is $77m over 5–7 
 - The COBOL engine is a faithful simulation, not the actual mainframe binary. Tariff data matches the CSVs but would need certification against the live rate tables.
 - The AI agent requires a `GEMINI_API_KEY` in `.env.local`. Without it the advisory panel gracefully errors.
 - No authentication. In production, agent identity would come from Northwind's SSO.
+- The regulatory credit (Licence Cond. 14B) is hardcoded per account. Production would query the outage management system for live credit amounts.

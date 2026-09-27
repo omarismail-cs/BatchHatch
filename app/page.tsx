@@ -2,12 +2,21 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Logo from "@/components/Logo";
 import BatchClock from "@/components/BatchClock";
+import DialMeter from "@/components/DialMeter";
 import { runCobolEngine, CobolResult } from "@/lib/billing";
 import { findAccount, searchAccounts, AccountRecord } from "@/lib/accounts";
 import { UNIT_COSTS } from "@/lib/data";
 
 // ─── Types ────────────────────────────────────────────────────────
 type Step = "search" | "account" | "result";
+type QueuedRecord = {
+  id: string;
+  accountId: string;
+  accountName: string;
+  batchLine: string;
+  type: "ADJ" | "HOLD";
+  addedAt: number;
+};
 
 export default function Home() {
   const [step, setStep] = useState<Step>("search");
@@ -28,15 +37,30 @@ export default function Home() {
   const [sessionCorrected, setSessionCorrected] = useState(0);
   const [sessionDays, setSessionDays] = useState(0);
   const [heldAccounts, setHeldAccounts] = useState<Set<string>>(new Set());
+  const [batchQueue, setBatchQueue] = useState<QueuedRecord[]>([]);
+  const [batchDrawerOpen, setBatchDrawerOpen] = useState(false);
   const billHeld = !!(account && heldAccounts.has(account.id));
   function toggleHold() {
     if (!account) return;
+    const isHeld = heldAccounts.has(account.id);
     setHeldAccounts((prev) => {
       const next = new Set(prev);
       if (next.has(account.id)) next.delete(account.id);
       else next.add(account.id);
       return next;
     });
+    if (!isHeld) {
+      // Placing on hold — generate a HOLD record for the batch queue
+      const holdLine = `HLD${new Date("2023-10-24").toISOString().slice(0,10).replace(/-/g,"")}${account.id.padEnd(12)}${"SUSPENDED-PENDING-VERIFIED-READ".padEnd(40)}HOLD`.slice(0, 80);
+      setBatchQueue((q) => [...q, {
+        id: `${account.id}-HOLD-${Date.now()}`,
+        accountId: account.id, accountName: account.name,
+        batchLine: holdLine, type: "HOLD", addedAt: Date.now(),
+      }]);
+    } else {
+      // Releasing hold — remove that account's HOLD record from queue
+      setBatchQueue((q) => q.filter((r) => !(r.accountId === account.id && r.type === "HOLD")));
+    }
   }
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentVisible, setAgentVisible] = useState(false);
@@ -96,6 +120,12 @@ export default function Home() {
     setSessionBills((p) => p + 1);
     setSessionCorrected((p) => p + Math.max(0, account.estimatedBill - res.total));
     setSessionDays((p) => p + account.openDays);
+    const acc = account;
+    setBatchQueue((q) => [...q, {
+      id: `${acc.id}-${Date.now()}`,
+      accountId: acc.id, accountName: acc.name,
+      batchLine: res.batchLine, type: "ADJ", addedAt: Date.now(),
+    }]);
   }
 
   async function handleFixWithRead(read: number) {
@@ -112,6 +142,12 @@ export default function Home() {
     setSessionBills((p) => p + 1);
     setSessionCorrected((p) => p + Math.max(0, account.estimatedBill - res.total));
     setSessionDays((p) => p + account.openDays);
+    const acc = account;
+    setBatchQueue((q) => [...q, {
+      id: `${acc.id}-${Date.now()}`,
+      accountId: acc.id, accountName: acc.name,
+      batchLine: res.batchLine, type: "ADJ", addedAt: Date.now(),
+    }]);
   }
 
   async function handleAgentRun(mode: "advisory" | "action" = "advisory", overrideMessage?: string) {
@@ -174,6 +210,27 @@ export default function Home() {
             <span><b style={{ color: "var(--text)", fontWeight: 500 }}>{sessionDays}</b> days</span>
           </div>
         )}
+        <button
+          onClick={() => setBatchDrawerOpen(true)}
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            background: batchQueue.length > 0 ? "var(--blue-light)" : "var(--bg)",
+            border: `1px solid ${batchQueue.length > 0 ? "var(--blue-mid)" : "var(--border)"}`,
+            borderRadius: 8, padding: "5px 10px", cursor: "pointer",
+            fontSize: 12, fontWeight: 600,
+            color: batchQueue.length > 0 ? "var(--blue)" : "var(--dim)",
+            transition: "all 0.15s",
+          }}
+        >
+          <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 10 }}>SYS01.INP</span>
+          {batchQueue.length > 0 && (
+            <span style={{
+              background: "var(--blue)", color: "#fff",
+              borderRadius: 100, fontSize: 10, fontWeight: 700,
+              padding: "1px 6px", minWidth: 16, textAlign: "center",
+            }}>{batchQueue.length}</span>
+          )}
+        </button>
         <a href="/metrics" style={{ fontSize: 13, fontWeight: 500, color: "var(--blue)", textDecoration: "none", whiteSpace: "nowrap" }}>
           Value case
         </a>
@@ -183,8 +240,12 @@ export default function Home() {
       <main style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 16px 60px" }}>
         <div style={{ width: "100%", maxWidth: 580 }}>
 
-          {/* Step indicator */}
-          <StepDots step={step} />
+          {/* Step indicator / breadcrumb */}
+          <StepDots
+            step={step}
+            onGoSearch={reset}
+            onGoAccount={() => setStep("account")}
+          />
 
           {/* ── STEP 1: Search ──────────────────────────────── */}
           {step === "search" && (
@@ -501,6 +562,9 @@ export default function Home() {
                   );
                 })()}
 
+                {/* ── Mechanical dial visualiser ── */}
+                <DialMeter value={dialRead} />
+
                 <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10, lineHeight: 1.7 }}>
                   Ask the customer to read their meter dial. The number must be higher than{" "}
                   <strong>{account.previousRead.toLocaleString()}</strong>{" "}
@@ -564,7 +628,7 @@ export default function Home() {
                       borderRadius: 10, padding: "10px 12px",
                     }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--red)", marginBottom: 4 }}>
-                        ⚠ Reading doesn&apos;t add up — do not proceed
+                        Reading doesn&apos;t add up — do not proceed
                       </div>
                       <div style={{ fontSize: 11, color: "var(--red)", lineHeight: 1.6 }}>
                         {dialUsage.toLocaleString()} kWh implied — that&apos;s{" "}
@@ -771,9 +835,6 @@ export default function Home() {
               </div>
               )}
 
-              <button onClick={reset} style={{ background: "none", border: "none", color: "var(--dim)", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
-                ← Back to search
-              </button>
             </div>
           )}
 
@@ -785,6 +846,7 @@ export default function Home() {
               parsedDial={parsedDial}
               receiptSent={receiptSent}
               onSendReceipt={() => setReceiptSent(true)}
+              onBack={() => setStep("account")}
               onReset={reset}
             />
           )}
@@ -796,6 +858,15 @@ export default function Home() {
         <PaletteModal onSelect={(a) => { setAccount(a); setStep("account"); setPaletteOpen(false); }} onClose={() => setPaletteOpen(false)} />
       )}
 
+      {/* Batch queue drawer */}
+      {batchDrawerOpen && (
+        <BatchDrawer
+          queue={batchQueue}
+          onClose={() => setBatchDrawerOpen(false)}
+          onSimulationComplete={() => setBatchQueue([])}
+        />
+      )}
+
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
@@ -805,13 +876,14 @@ export default function Home() {
 
 // ── CalcResult — narrated calculation terminal ─────────────────────
 function CalcResult({
-  account, result, parsedDial, receiptSent, onSendReceipt, onReset,
+  account, result, parsedDial, receiptSent, onSendReceipt, onBack, onReset,
 }: {
   account: AccountRecord;
   result: CobolResult;
   parsedDial: number;
   receiptSent: boolean;
   onSendReceipt: () => void;
+  onBack: () => void;
   onReset: () => void;
 }) {
   type CalcLine = { text: string; kind: "section" | "row" | "divider" | "total" | "success" };
@@ -1038,6 +1110,18 @@ function CalcResult({
             {receiptSent ? `✓ Receipt sent to ${account.name.split(" ")[0]}` : "Send Receipt via SMS"}
           </button>
           <button
+            onClick={onBack}
+            style={{
+              padding: "14px 16px", borderRadius: 12,
+              background: "var(--surface)", color: "var(--muted)",
+              border: "1px solid var(--border)", fontSize: 13,
+              fontWeight: 600, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            ← Edit read
+          </button>
+          <button
             onClick={onReset}
             style={{
               padding: "14px 20px", borderRadius: 12,
@@ -1051,10 +1135,74 @@ function CalcResult({
         </div>
       )}
 
+      {/* ACW — After-Call Work summary */}
+      {done && <AcwSummary account={account} result={result} parsedDial={parsedDial} savings={savings} />}
+
       {/* Receipt */}
       {done && receiptSent && (
         <BillAdjustmentReceipt account={account} result={result} parsedDial={parsedDial} savings={savings} />
       )}
+    </div>
+  );
+}
+
+// ── AcwSummary — After-Call Work note for CaseTrack ───────────────
+function AcwSummary({ account, result, parsedDial, savings }: {
+  account: AccountRecord; result: CobolResult; parsedDial: number; savings: number;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const adjSign  = savings >= 0 ? "-" : "+";
+  const adjAmt   = `${adjSign}$${Math.abs(savings).toFixed(2)}`;
+  const creditLine = account.outage
+    ? ` Lic 14B outage credit -$${account.outage.compensationApplied.toFixed(2)} acknowledged.`
+    : "";
+
+  const line1 = `[SYS-01 ADJ CONFIRMED] Dial verified ${parsedDial.toLocaleString()} (was ${account.estimatedRead.toLocaleString()} est).`;
+  const line2 = `Adj ${adjAmt} applied.${creditLine}`;
+  const line3 = `FCR achieved. SMS receipt dispatched to customer.`;
+  const note  = `${line1}\n${line2}\n${line3}`;
+
+  function copy() {
+    navigator.clipboard.writeText(note).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
+  }
+
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 0 }}>
+      <div style={{
+        padding: "10px 16px", borderBottom: "1px solid var(--border)",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <div>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>CaseTrack ACW note</span>
+          <span style={{ fontSize: 11, color: "var(--dim)", marginLeft: 8 }}>After-call work · paste into CRM</span>
+        </div>
+        <button
+          onClick={copy}
+          style={{
+            padding: "5px 12px", borderRadius: 7, fontSize: 11, fontWeight: 700,
+            background: copied ? "var(--green-light)" : "var(--blue-light)",
+            color: copied ? "var(--green)" : "var(--blue)",
+            border: `1px solid ${copied ? "var(--green-mid)" : "var(--blue-mid)"}`,
+            cursor: "pointer", transition: "all 0.15s",
+          }}
+        >
+          {copied ? "✓ Copied!" : "Copy to CaseTrack"}
+        </button>
+      </div>
+      <div style={{
+        padding: "12px 16px",
+        fontFamily: "var(--font-mono), monospace",
+        fontSize: 11, lineHeight: 1.9, color: "var(--text)",
+        background: "var(--bg)",
+      }}>
+        <div><span style={{ color: "var(--blue)", fontWeight: 700 }}>{line1}</span></div>
+        <div>{line2}</div>
+        <div style={{ color: "var(--green)" }}>{line3}</div>
+      </div>
     </div>
   );
 }
@@ -1154,6 +1302,41 @@ function BillAdjustmentReceipt({
             </div>
           </div>
         </div>
+        {/* Regulatory compensation credit row */}
+        {account.outage?.compensationApplied && (() => {
+          const netDue = result.total - account.outage!.compensationApplied;
+          return (
+            <>
+              <div style={{
+                padding: "9px 16px", borderTop: "1px solid var(--border)",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "var(--amber-light, #fffbeb)",
+              }}>
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--amber, #b45309)" }}>
+                    Regulatory credit · Licence Cond. 14B
+                  </span>
+                  <span style={{ fontSize: 10, color: "var(--muted)", marginLeft: 8 }}>
+                    Outage compensation · {account.outage!.ref}
+                  </span>
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--amber, #b45309)", fontVariantNumeric: "tabular-nums" }}>
+                  −${account.outage!.compensationApplied.toFixed(2)}
+                </span>
+              </div>
+              <div style={{
+                padding: "9px 16px", borderTop: "1px solid var(--border)",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "var(--surface)",
+              }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>Net amount due</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>
+                  ${netDue.toFixed(2)}
+                </span>
+              </div>
+            </>
+          );
+        })()}
         {savings > 0 && (
           <div style={{
             padding: "10px 16px", textAlign: "center",
@@ -1525,18 +1708,229 @@ function OutageAlert({ outage, customerFirstName }: { outage: OutageRecord; cust
   );
 }
 
-// ── Step dots ──────────────────────────────────────────────────────
-function StepDots({ step }: { step: Step }) {
-  const steps: Step[] = ["search", "account", "result"];
-  const labels = ["Find account", "Enter dial read", "Bill fixed"];
-  const idx = steps.indexOf(step);
+// ── Step breadcrumb ────────────────────────────────────────────────
+function StepDots({ step, onGoSearch, onGoAccount }: {
+  step: Step;
+  onGoSearch: () => void;
+  onGoAccount: () => void;
+}) {
+  const crumbs: { label: string; onClick?: () => void }[] =
+    step === "search"  ? [{ label: "Find account" }] :
+    step === "account" ? [{ label: "Find account", onClick: onGoSearch }, { label: "Dial read" }] :
+                         [{ label: "Find account", onClick: onGoSearch }, { label: "Dial read", onClick: onGoAccount }, { label: "Bill fixed" }];
+
   return (
-    <div style={{ display: "flex", gap: 18, marginBottom: 24, fontSize: 13 }}>
-      {steps.map((s, i) => (
-        <span key={s} style={{ color: i === idx ? "var(--text)" : "var(--dim)", fontWeight: i === idx ? 500 : 400 }}>
-          {labels[i]}
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 24, fontSize: 12 }}>
+      {crumbs.map((c, i) => (
+        <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {i > 0 && <span style={{ color: "var(--border-md)", fontSize: 10 }}>›</span>}
+          {c.onClick ? (
+            <button
+              onClick={c.onClick}
+              style={{
+                background: "none", border: "none", padding: 0, cursor: "pointer",
+                color: "var(--dim)", fontSize: 12, fontWeight: 500,
+                display: "flex", alignItems: "center", gap: 4,
+              }}
+            >
+              {i === 0 && step !== "search" && <span style={{ fontSize: 10 }}>←</span>}
+              {c.label}
+            </button>
+          ) : (
+            <span style={{ color: "var(--text)", fontWeight: 600, fontSize: 12 }}>{c.label}</span>
+          )}
         </span>
       ))}
+    </div>
+  );
+}
+
+// ── BatchDrawer — tonight's queue + mainframe simulation ──────────
+function BatchDrawer({ queue, onClose, onSimulationComplete }: {
+  queue: QueuedRecord[];
+  onClose: () => void;
+  onSimulationComplete: () => void;
+}) {
+  const [simLog, setSimLog] = useState<{ text: string; ok: boolean }[]>([]);
+  const [simRunning, setSimRunning] = useState(false);
+  const [simDone, setSimDone] = useState(false);
+  const logRef = useRef<HTMLDivElement>(null);
+
+  async function runSimulation() {
+    if (simRunning || simDone) return;
+    setSimRunning(true);
+    const push = (text: string, ok = true) => {
+      setSimLog((l) => [...l, { text, ok }]);
+      setTimeout(() => logRef.current?.scrollTo({ top: 99999, behavior: "smooth" }), 50);
+    };
+
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    push("AURORA SYS-01 · BATCH INGEST INITIATED");
+    push(`JOB: NWBATCH23 · RUN DATE: 2023-10-25 02:00:00`);
+    push(`READING INPUT: SYS01.INP.DAILY (${queue.length} record${queue.length !== 1 ? "s" : ""})`);
+    await delay(600);
+    push("─────────────────────────────────────────────────────────────────────────────");
+
+    let adjCount = 0; let holdCount = 0;
+    for (const rec of queue) {
+      await delay(350);
+      if (rec.type === "ADJ") {
+        adjCount++;
+        push(`RECORD ${rec.accountId.padEnd(12)} INGESTED`);
+        await delay(180);
+        push(`  → TARIFF APPLIED · UNITS VALIDATED · SUBTOTALS MATCHED`);
+        await delay(180);
+        push(`  → RECONCILED OK · RC=0000 · STMT QUEUED FOR PRINT`);
+      } else {
+        holdCount++;
+        push(`RECORD ${rec.accountId.padEnd(12)} TYPE=HOLD`);
+        await delay(180);
+        push(`  → SUSPENDED FROM DISPATCH · PENDING VERIFIED READ`);
+        await delay(180);
+        push(`  → HOLD ACKNOWLEDGED · NO BILL ISSUED TO CUSTOMER`);
+      }
+    }
+
+    await delay(500);
+    push("─────────────────────────────────────────────────────────────────────────────");
+    push(`TOTALS: ${adjCount} ADJ · ${holdCount} HOLD`);
+    push(`REJECTIONS: 0 · EXCEPTIONS: 0`);
+    await delay(300);
+    push(`BATCH COMPLETE · SYS01.INP.DAILY ARCHIVED · QUEUE CLEARED`);
+    push(`NEXT RUN: 2023-10-26 02:00:00`);
+    setSimRunning(false);
+    setSimDone(true);
+  }
+
+  // Total $ reconciled across ADJ records
+  const totalDollars = queue
+    .filter((r) => r.type === "ADJ")
+    .reduce((sum, r) => {
+      // Extract total from batchLine bytes 22-29 (pence, 8 digits)
+      const pence = parseInt(r.batchLine.slice(22, 30) || "0", 10);
+      return sum + (isNaN(pence) ? 0 : pence / 100);
+    }, 0);
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 50,
+      background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center",
+      padding: "0 0 0 0",
+    }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{
+        width: "100%", maxWidth: 680,
+        background: "#0d1117", borderRadius: "16px 16px 0 0",
+        overflow: "hidden", display: "flex", flexDirection: "column",
+        maxHeight: "85vh",
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: "14px 20px", borderBottom: "1px solid #21262d",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, color: "#58a6ff", fontWeight: 700 }}>
+              SYS01.INP.DAILY
+            </span>
+            <span style={{ fontSize: 11, color: "#8b949e" }}>
+              {queue.length} record{queue.length !== 1 ? "s" : ""} queued · 2:00 AM ingest
+            </span>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Queue list */}
+        <div style={{ padding: "12px 20px", borderBottom: "1px solid #21262d", overflowY: "auto", maxHeight: 200 }}>
+          {queue.length === 0 ? (
+            <div style={{ fontSize: 12, color: "#8b949e", padding: "12px 0" }}>No records queued yet. Fix or hold a bill to add one.</div>
+          ) : queue.map((rec) => (
+            <div key={rec.id} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "6px 0", borderBottom: "1px solid #21262d",
+            }}>
+              <span style={{
+                fontSize: 10, fontWeight: 700, borderRadius: 4, padding: "2px 6px",
+                background: rec.type === "ADJ" ? "#1f3a5f" : "#2d2a1f",
+                color: rec.type === "ADJ" ? "#58a6ff" : "#d4a72c",
+              }}>{rec.type}</span>
+              <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, color: "#e6edf3", flex: 1 }}>
+                {rec.accountId}
+              </span>
+              <span style={{ fontSize: 11, color: "#8b949e" }}>{rec.accountName}</span>
+              <span style={{ fontSize: 10, color: "#484f58", fontFamily: "var(--font-mono), monospace" }}>
+                {new Date(rec.addedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* 80-col preview of last record */}
+        {queue.length > 0 && (
+          <div style={{ padding: "10px 20px", borderBottom: "1px solid #21262d" }}>
+            <div style={{ fontSize: 9, color: "#484f58", fontWeight: 700, letterSpacing: "0.06em", marginBottom: 4 }}>80-COL RECORD PREVIEW (LATEST)</div>
+            <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 10, color: "#3fb950", wordBreak: "break-all", letterSpacing: "0.04em" }}>
+              {queue[queue.length - 1].batchLine}
+            </div>
+          </div>
+        )}
+
+        {/* Simulation terminal */}
+        {simLog.length > 0 && (
+          <div ref={logRef} style={{
+            flex: 1, overflowY: "auto", padding: "12px 20px",
+            fontFamily: "var(--font-mono), monospace", fontSize: 11, lineHeight: 1.8,
+            background: "#010409",
+          }}>
+            {simLog.map((l, i) => (
+              <div key={i} style={{ color: l.ok ? "#3fb950" : "#f85149" }}>{l.text}</div>
+            ))}
+            {simRunning && <div style={{ color: "#58a6ff" }}>█</div>}
+          </div>
+        )}
+
+        {/* Footer controls */}
+        <div style={{
+          padding: "14px 20px", borderTop: "1px solid #21262d",
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          background: "#161b22",
+        }}>
+          {queue.length > 0 && (
+            <div style={{ fontSize: 11, color: "#8b949e" }}>
+              ${totalDollars.toFixed(2)} across {queue.filter(r => r.type === "ADJ").length} adjustment{queue.filter(r => r.type === "ADJ").length !== 1 ? "s" : ""}
+            </div>
+          )}
+          <div style={{ flex: 1 }} />
+          {simDone ? (
+            <button
+              onClick={() => { onSimulationComplete(); onClose(); }}
+              style={{
+                padding: "9px 20px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                background: "#3fb950", color: "#010409", border: "none", cursor: "pointer",
+              }}
+            >
+              ✓ Queue cleared — close
+            </button>
+          ) : (
+            <button
+              onClick={runSimulation}
+              disabled={queue.length === 0 || simRunning}
+              style={{
+                padding: "9px 20px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                background: queue.length === 0 ? "#21262d" : "#238636",
+                color: queue.length === 0 ? "#484f58" : "#fff",
+                border: "none", cursor: queue.length === 0 ? "not-allowed" : "pointer",
+                display: "flex", alignItems: "center", gap: 8,
+              }}
+            >
+              {simRunning
+                ? <><span style={{ display: "inline-block", animation: "spin 0.7s linear infinite" }}>⟳</span> Ingesting…</>
+                : "▶ Simulate 2:00 AM Mainframe Ingest"}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
